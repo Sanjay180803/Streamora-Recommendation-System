@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { apiFetch } from '../api/client'
 import './LoginPage.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+// FastAPI validation errors arrive as a list; show the first message
+function errorMessage(data, fallback) {
+  if (typeof data?.detail === 'string') return data.detail
+  if (Array.isArray(data?.detail) && data.detail[0]?.msg) return data.detail[0].msg.replace(/^Value error, /, '')
+  return fallback
+}
 
 export default function LoginPage() {
   const [mode, setMode]   = useState('login')
@@ -22,28 +28,26 @@ export default function LoginPage() {
     try {
       if (mode === 'signup') {
         if (!form.name) { setError('Please enter your name.'); setLoading(false); return }
-        if (form.password.length < 6) { setError('Password must be at least 6 characters.'); setLoading(false); return }
-        const res = await fetch(`${API_BASE}/auth/register`, {
+        if (form.password.length < 8) { setError('Password must be at least 8 characters.'); setLoading(false); return }
+        const res = await apiFetch('/auth/register', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: form.email, name: form.name, password: form.password }),
+          body: { email: form.email, name: form.name, password: form.password },
         })
         const data = await res.json()
-        if (!res.ok) { setError(data.detail || 'Registration failed.'); setLoading(false); return }
-        login({ email: data.email, name: data.name })
+        if (!res.ok) { setError(errorMessage(data, 'Registration failed.')); setLoading(false); return }
+        login({ email: data.email, name: data.name, token: data.access_token, profiles: data.profiles })
         navigate('/profiles')
       } else {
-        const res = await fetch(`${API_BASE}/auth/login`, {
+        const res = await apiFetch('/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: form.email, password: form.password }),
+          body: { email: form.email, password: form.password },
         })
         const data = await res.json()
-        if (!res.ok) { setError(data.detail || 'Login failed.'); setLoading(false); return }
-        login({ email: data.email, name: data.name })
+        if (!res.ok) { setError(errorMessage(data, 'Login failed.')); setLoading(false); return }
+        login({ email: data.email, name: data.name, token: data.access_token, profiles: data.profiles })
         navigate('/profiles')
       }
-    } catch (e) {
+    } catch {
       setError('Cannot connect to server. Please try again.')
     }
     setLoading(false)

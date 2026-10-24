@@ -1,37 +1,39 @@
-FROM python:3.11-slim
+FROM python:3.11.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/opt/huggingface
+
+# CPU-only PyTorch for sentence-transformers (the default wheel bundles CUDA)
+RUN pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 
 # Copy and install Python dependencies first (layer caching)
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
+
+# Bake the semantic-search model into the image so startup needs no network
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+ENV HF_HUB_OFFLINE=1
 
 # Copy backend source code
 COPY backend/ .
 
-# Copy data files (models + CSVs)
-COPY data/bert4rec_v3.onnx /app/data/bert4rec_v3.onnx
-COPY data/bert4rec_v3.onnx.data /app/data/bert4rec_v3.onnx.data
-COPY data/sasrec_v3.onnx /app/data/sasrec_v3.onnx
-COPY data/sasrec_v3.onnx.data /app/data/sasrec_v3.onnx.data
-COPY data/item_features_final.csv /app/data/item_features_final.csv
-COPY data/netflix_uk_final.csv /app/data/netflix_uk_final.csv
-COPY data/user_features_final.csv /app/data/user_features_final.csv
+# Models and CSVs are not in git or in the image: mount them at /app/data
+# (see docs/artifacts.md). The database lives on its own volume.
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /app/data /app/db \
+    && chown app /app/db
+USER app
 
-# Set environment variables
-ENV DATA_DIR=/app/data
-ENV MODEL_PATH=/app/data/bert4rec_v3.onnx
-ENV SASREC_MODEL_PATH=/app/data/sasrec_v3.onnx
-ENV MIN_SEQUENCE_LENGTH=1
-ENV REDIS_URL=redis://redis:6379
-ENV KAFKA_BOOTSTRAP=kafka:9092
+ENV DATA_DIR=/app/data \
+    DATABASE_URL=sqlite:////app/db/streamora.db
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

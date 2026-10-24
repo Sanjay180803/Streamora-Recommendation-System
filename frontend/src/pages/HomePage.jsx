@@ -7,7 +7,8 @@ import HeroSection from '../components/HeroSection'
 import './HomePage.css'
 
 export default function HomePage({ onWatchTogether }) {
-  const { sessionId, watchHistory, continueWatching, watchedMovies, addToContinueWatching } = useAuth()
+  const { profile, watchHistory, continueWatching, addToContinueWatching } = useAuth()
+  const profileId = profile?.id
 
   const [recommendations, setRecommendations] = useState([])
   const [modelVariant, setModelVariant]       = useState('bert4rec')
@@ -52,9 +53,14 @@ export default function HomePage({ onWatchTogether }) {
     }, 6000)
   }, [])
 
+  // New hero items start at a random slide
+  const showHeroItems = useCallback((items) => {
+    setHeroItems(items)
+    setHeroIndex(Math.floor(Math.random() * Math.min(items.length, 5)))
+  }, [])
+
   useEffect(() => {
     if (heroItems.length === 0) return
-    setHeroIndex(Math.floor(Math.random() * Math.min(heroItems.length, 5)))
     startAutoAdvance()
     return () => clearInterval(autoAdvanceRef.current)
   }, [heroItems, startAutoAdvance])
@@ -73,12 +79,12 @@ export default function HomePage({ onWatchTogether }) {
         popularRef.current = popularRes
         const heroFallback = popularRes.filter(m => m.backdrop_path).slice(0, 5)
           .map(m => ({ movie: tmdbToMovie(m), tmdbData: tmdbToData(m) }))
-        setHeroItems(heroFallback)
+        showHeroItems(heroFallback)
       } catch (e) { console.error('TMDB load failed:', e) }
       setLoading(false)
     }
     loadTMDB()
-  }, [])
+  }, [showHeroItems])
 
   // Load recommendations when history or refreshCount changes
   useEffect(() => {
@@ -87,7 +93,7 @@ export default function HomePage({ onWatchTogether }) {
       const freshHistory  = storedHistory ? JSON.parse(storedHistory) : []
       if (freshHistory.length === 0) return
       try {
-        const recRes = await getRecommendations(freshHistory, sessionId, 20)
+        const recRes = await getRecommendations(freshHistory, profileId, 20)
         const recs   = recRes.recommendations || []
         setRecommendations(recs)
         setModelVariant(recRes.model_variant)
@@ -101,12 +107,12 @@ export default function HomePage({ onWatchTogether }) {
             })
           )
           const valid = heroRecs.filter(Boolean)
-          if (valid.length >= 2) setHeroItems(valid)
+          if (valid.length >= 2) showHeroItems(valid)
         }
       } catch (e) { console.error('Recommendations failed:', e) }
     }
     loadRecs()
-  }, [sessionId, refreshCount, watchHistory.length])
+  }, [profileId, refreshCount, watchHistory.length, showHeroItems])
 
   const handleMovieClick = useCallback((movie, tmdbData) => {
     setSelectedMovie(movie)
@@ -119,7 +125,7 @@ export default function HomePage({ onWatchTogether }) {
 
   const handleFeedback = useCallback(async (movieId, signal, variant) => {
     try {
-      await sendFeedback(sessionId, movieId, signal, variant || modelVariant)
+      await sendFeedback(profileId, movieId, signal, variant || modelVariant)
       if (signal === -1) {
         // Remove thumbs down movie from recommendations immediately
         setRecommendations(prev => prev.filter(m => m.item_id !== movieId))
@@ -128,7 +134,7 @@ export default function HomePage({ onWatchTogether }) {
         setRefreshCount(c => c + 1)
       }
     } catch (e) { console.error('Feedback error:', e) }
-  }, [sessionId, modelVariant])
+  }, [profileId, modelVariant])
 
   const continueWatchingMovies = continueWatching.map(cw => cw.movie)
   const continueWatchingIds = new Set(continueWatching.map(cw => cw.movie?.item_id).filter(Boolean))

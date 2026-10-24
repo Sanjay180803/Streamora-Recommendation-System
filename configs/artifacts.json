@@ -1,0 +1,59 @@
+{
+  "description": "Model and data files the backend needs at runtime. They are not stored in git. Paths are relative to the repository root. sha256 and size_bytes are null until the files are obtained and recorded with: python scripts/check_artifacts.py --record. Fill in source and license before distributing any file.",
+  "files": [
+    {
+      "path": "data/bert4rec_v3.onnx",
+      "required": true,
+      "purpose": "BERT4Rec model graph (ONNX)",
+      "size_bytes": null,
+      "source": "Original Streamora team (upstream RP-1106/Streamora-Recommendation-System)",
+      "license": "Unconfirmed; derived from Netflix UK interaction data. Do not redistribute until confirmed.",
+      "sha256": null
+    },
+    {
+      "path": "data/bert4rec_v3.onnx.data",
+      "required": true,
+      "purpose": "BERT4Rec external weights, loaded by ONNX Runtime from beside the .onnx file",
+      "size_bytes": null,
+      "source": "Original Streamora team (upstream RP-1106/Streamora-Recommendation-System)",
+      "license": "Unconfirmed; derived from Netflix UK interaction data. Do not redistribute until confirmed.",
+      "sha256": null
+    },
+    {
+      "path": "data/sasrec_v3.onnx",
+      "required": false,
+      "purpose": "SASRec model graph; without it every request uses BERT4Rec",
+      "size_bytes": null,
+      "source": "Original Streamora team (upstream RP-1106/Streamora-Recommendation-System)",
+      "license": "Unconfirmed; derived from Netflix UK interaction data. Do not redistribute until confirmed.",
+      "sha256": null
+    },
+    {
+      "path": "data/sasrec_v3.onnx.data",
+      "required": false,
+      "purpose": "SASRec external weights",
+      "size_bytes": null,
+      "source": "Original Streamora team (upstream RP-1106/Streamora-Recommendation-System)",
+      "license": "Unconfirmed; derived from Netflix UK interaction data. Do not redistribute until confirmed.",
+      "sha256": null
+    },
+    {
+      "path": "data/item_features_final.csv",
+      "required": true,
+      "purpose": "Catalogue: item ids, model indices, titles, years, genres, popularity",
+      "size_bytes": null,
+      "source": "Original Streamora team (upstream RP-1106/Streamora-Recommendation-System)",
+      "license": "Unconfirmed; derived from Netflix UK interaction data. Do not redistribute until confirmed.",
+      "sha256": null
+    },
+    {
+      "path": "data/user_features_final.csv",
+      "required": true,
+      "purpose": "User feature table; loaded at startup but inference currently uses a zero user vector",
+      "size_bytes": null,
+      "source": "Original Streamora team (upstream RP-1106/Streamora-Recommendation-System)",
+      "license": "Unconfirmed; derived from Netflix UK interaction data. Do not redistribute until confirmed.",
+      "sha256": null
+    }
+  ]
+}

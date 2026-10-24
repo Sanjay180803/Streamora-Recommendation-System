@@ -61,3 +61,10 @@ frontend/.env
 
 # Scripts
 quantize_models.py
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.env.local
+.env.*.local

@@ -5,12 +5,9 @@ import MovieModal from '../components/MovieModal'
 import './HomePage.css'
 
 export default function MyListPage() {
-  const { watchHistory, watchedMovies } = useAuth()
+  const { watchHistory } = useAuth()
   const [selectedMovie, setSelectedMovie] = useState(null)
   const [selectedTmdb, setSelectedTmdb]   = useState(null)
-
-  // Get liked movies from localStorage
-  const likedIds = JSON.parse(localStorage.getItem('nf_liked') || '[]')
 
   // Watch history as movie cards
   const watchedList = watchHistory.map(item => ({

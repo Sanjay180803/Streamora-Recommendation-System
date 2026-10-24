@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getTMDBNowPlaying, getTMDBOnAirTV, getTMDBTrendingAll, movieToCard, movieToData, tvToMovie, tvToData } from '../api/client'
+import { getTMDBNowPlaying, getTMDBOnAirTV, getTMDBTrendingAll, movieToCard, tvToMovie } from '../api/client'
 import MovieRow from '../components/MovieRow'
 import MovieModal from '../components/MovieModal'
 import './HomePage.css'

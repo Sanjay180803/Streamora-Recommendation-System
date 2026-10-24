@@ -1,17 +1,14 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { apiFetch } from '../api/client'
 import './WatchTogetherModal.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
-
 export default function WatchTogetherModal({ movie, onClose, onPartyStart }) {
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
   const [email, setEmail]       = useState('')
   const [status, setStatus]     = useState('idle')
   const [message, setMessage]   = useState('')
   const [roomId, setRoomId]     = useState(null)  // store real room_id
-
-  const senderName = profile?.name || user?.name || 'Someone'
 
   const handleInvite = async () => {
     if (!email.trim()) return
@@ -19,15 +16,6 @@ export default function WatchTogetherModal({ movie, onClose, onPartyStart }) {
     setMessage('')
 
     try {
-      const checkRes  = await fetch(`${API_BASE}/auth/check/${encodeURIComponent(email.trim())}`)
-      const checkData = await checkRes.json()
-
-      if (!checkData.exists) {
-        setStatus('error')
-        setMessage(`No STREAMORA account found for ${email}. Ask them to sign up first.`)
-        return
-      }
-
       if (email.trim().toLowerCase() === user?.email?.toLowerCase()) {
         setStatus('error')
         setMessage("You can't invite yourself.")
@@ -36,16 +24,13 @@ export default function WatchTogetherModal({ movie, onClose, onPartyStart }) {
 
       setStatus('sending')
 
-      const inviteRes  = await fetch(`${API_BASE}/invite`, {
+      const inviteRes  = await apiFetch('/invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from_email:  user?.email,
-          from_name:   senderName,
+        body: {
           to_email:    email.trim(),
           movie_title: movie.title,
           movie_id:    movie.item_id,
-        }),
+        },
       })
       const inviteData = await inviteRes.json()
 
@@ -58,9 +43,9 @@ export default function WatchTogetherModal({ movie, onClose, onPartyStart }) {
       // Store the real room_id
       setRoomId(inviteData.room_id)
       setStatus('sent')
-      setMessage(`Invite sent to ${checkData.name}! You can start watching now — they'll join when they accept.`)
+      setMessage(`If ${email.trim()} has a STREAMORA account, they'll get your invite. You can start now — they'll join when they accept.`)
 
-    } catch (e) {
+    } catch {
       setStatus('error')
       setMessage('Could not connect to server. Check your connection.')
     }

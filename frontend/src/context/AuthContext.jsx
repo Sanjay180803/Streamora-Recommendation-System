@@ -1,24 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { apiFetch, getToken, setToken } from '../api/client'
 
 const AuthContext = createContext(null)
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(() => { try { return JSON.parse(localStorage.getItem('nf_user')) } catch { return null } })
+  // A stored user without a token predates token auth and must log in again
+  const [user, setUser]       = useState(() => { try { return getToken() ? JSON.parse(localStorage.getItem('nf_user')) : null } catch { return null } })
   const [profile, setProfile] = useState(() => { try { return JSON.parse(localStorage.getItem('nf_profile')) } catch { return null } })
   const [profiles, setProfiles] = useState(() => { try { return JSON.parse(localStorage.getItem('nf_profiles')) || [] } catch { return [] } })
-
-  const [sessionId] = useState(() => {
-    let id = localStorage.getItem('nf_session')
-    if (!id) {
-      id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0
-        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
-      })
-      localStorage.setItem('nf_session', id)
-    }
-    return id
-  })
 
   const [watchHistory, setWatchHistory]         = useState([])
   const [continueWatching, setContinueWatching] = useState([])
@@ -31,7 +20,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (user?.email && profiles.length === 0) {
-      fetch(`${API_BASE}/profiles/${encodeURIComponent(user.email)}`)
+      apiFetch('/profiles')
         .then(r => r.json())
         .then(data => {
           if (data.profiles?.length > 0) {
@@ -48,9 +37,10 @@ export function AuthProvider({ children }) {
     const load = async () => {
       try {
         const [histRes, cwRes] = await Promise.all([
-          fetch(`${API_BASE}/history/${encodeURIComponent(user.email)}/${profile.id}`),
-          fetch(`${API_BASE}/continue-watching/${encodeURIComponent(user.email)}/${profile.id}`),
+          apiFetch(`/history/${profile.id}`),
+          apiFetch(`/continue-watching/${profile.id}`),
         ])
+        if (!histRes.ok || !cwRes.ok) throw new Error('Failed to load profile data')
         const histData = await histRes.json()
         const cwData   = await cwRes.json()
 
@@ -79,11 +69,11 @@ export function AuthProvider({ children }) {
     const p = profileRef.current
     if (!u?.email || !p?.id) return
     try {
-      await fetch(`${API_BASE}/history/save`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_email: u.email, profile_id: p.id, history }),
+      await apiFetch('/history/save', {
+        method: 'POST',
+        body: { profile_id: p.id, history },
       })
-    } catch {}
+    } catch { /* best effort: the local copy stays in localStorage */ }
   }, [])
 
   const saveCWToBackend = useCallback(async (items) => {
@@ -91,14 +81,15 @@ export function AuthProvider({ children }) {
     const p = profileRef.current
     if (!u?.email || !p?.id) return
     try {
-      await fetch(`${API_BASE}/continue-watching/save`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_email: u.email, profile_id: p.id, items }),
+      await apiFetch('/continue-watching/save', {
+        method: 'POST',
+        body: { profile_id: p.id, items },
       })
-    } catch {}
+    } catch { /* best effort: the local copy stays in localStorage */ }
   }, [])
 
   const login = useCallback((userData) => {
+    if (userData.token) setToken(userData.token)
     const userToStore = { email: userData.email, name: userData.name }
     setUser(userToStore)
     userRef.current = userToStore
@@ -111,6 +102,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = useCallback(() => {
+    setToken(null)
     setUser(null); setProfile(null); setProfiles([])
     setWatchHistory([]); setWatchedMovies(new Set())
     setContinueWatching([])
@@ -121,6 +113,12 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('nf_profiles')
     localStorage.removeItem('nf_history')
   }, [])
+
+  // client.js fires this when the backend rejects the stored token
+  useEffect(() => {
+    window.addEventListener('auth:expired', logout)
+    return () => window.removeEventListener('auth:expired', logout)
+  }, [logout])
 
   const selectProfile = useCallback((prof) => {
     setProfile(prof)
@@ -162,7 +160,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, profile, profiles, sessionId,
+      user, profile, profiles,
       watchHistory, continueWatching, watchedMovies,
       login, logout, selectProfile,
       addToHistory, updateProgress, addToContinueWatching,
@@ -172,4 +170,5 @@ export function AuthProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- the hook belongs with its context
 export const useAuth = () => useContext(AuthContext)

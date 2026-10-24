@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { apiFetch, searchTMDB } from '../api/client'
 import './SearchBar.css'
-
-const TMDB_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3ZDM4ZGZkN2MwN2ZhZjQzOWNkN2M5NGVmOGRkMzMzNiIsIm5iZiI6MTc3NTExOTIxOC43NTEwMDAyLCJzdWIiOiI2OWNlMmI3MjA2MTI1YWNhNWZkMjhkNzUiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.xiwle-ORjQsdoW5wGqJYUtIuQLByHo7le0XjHtLfNYQ'
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 async function searchCatalogue(query) {
   try {
-    const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&top_k=8`)
+    const res = await apiFetch(`/search?q=${encodeURIComponent(query)}&top_k=8`)
     const data = await res.json()
     return (data.results || []).map(r => ({
       ...r, _source: 'catalogue', _mediaType: 'movie',
@@ -18,29 +16,17 @@ async function searchCatalogue(query) {
 }
 
 async function searchTMDBMovies(query) {
-  try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&language=en-US&page=1`,
-      { headers: { Authorization: `Bearer ${TMDB_TOKEN}` } }
-    )
-    const data = await res.json()
-    return (data.results || []).slice(0, 4).map(r => ({ ...r, _source: 'tmdb', _mediaType: 'movie' }))
-  } catch { return [] }
+  const results = await searchTMDB('movie', query)
+  return results.slice(0, 4).map(r => ({ ...r, _source: 'tmdb', _mediaType: 'movie' }))
 }
 
 async function searchTMDBTV(query) {
-  try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(query)}&language=en-US&page=1`,
-      { headers: { Authorization: `Bearer ${TMDB_TOKEN}` } }
-    )
-    const data = await res.json()
-    return (data.results || []).slice(0, 4).map(r => ({
-      ...r, _source: 'tmdb', _mediaType: 'tv',
-      title: r.name || r.original_name,
-      release_date: r.first_air_date,
-    }))
-  } catch { return [] }
+  const results = await searchTMDB('tv', query)
+  return results.slice(0, 4).map(r => ({
+    ...r, _source: 'tmdb', _mediaType: 'tv',
+    title: r.name || r.original_name,
+    release_date: r.first_air_date,
+  }))
 }
 
 // Issue 1: Score results by relevance to query
@@ -61,16 +47,17 @@ function scoreResult(result, query) {
 
 export default function SearchBar({ onSearch, onClose }) {
   const [query, setQuery]     = useState('')
-  const [results, setResults] = useState([])
+  const [fetchedResults, setFetchedResults] = useState([])
   const [loading, setLoading] = useState(false)
   const inputRef    = useRef(null)
+  const results     = query && query.length >= 2 ? fetchedResults : []
   const debounceRef = useRef(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!query || query.length < 2) { setResults([]); return }
+    if (!query || query.length < 2) return
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true)
@@ -91,7 +78,7 @@ export default function SearchBar({ onSearch, onClose }) {
       // Issue 1: Sort by relevance score (highest first)
       merged.sort((a, b) => scoreResult(b, query) - scoreResult(a, query))
 
-      setResults(merged.slice(0, 10))
+      setFetchedResults(merged.slice(0, 10))
       setLoading(false)
     }, 300)
 
