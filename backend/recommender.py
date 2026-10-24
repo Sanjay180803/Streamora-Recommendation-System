@@ -16,12 +16,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import onnxruntime as ort
-from semantic_search import load_search_index
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from schemas import MovieCard
+from semantic_search import load_search_index
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,15 @@ TOKEN_OFFSET_SASREC:   int = 1
 # STARTUP — call this once from main.py lifespan
 # ─────────────────────────────────────────────────────────────────────────────
 
+REQUIRED_DATA_FILES = ("item_features_final.csv", "user_features_final.csv")
+
+
+def missing_artifacts(data_dir: str, model_path: str) -> list[str]:
+    """Paths of required files that do not exist (SASRec is optional)."""
+    required = [Path(data_dir) / name for name in REQUIRED_DATA_FILES] + [Path(model_path)]
+    return [str(path) for path in required if not path.exists()]
+
+
 def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = None) -> None:
     """
     Load item features, user features, and ONNX model(s) into memory.
@@ -80,6 +89,14 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
     global _ort_session, _ort_session_sasrec, _item_id_to_idx, _idx_to_card, _title_to_item_id
     global _popularity_fallback_ids, _user_feature_matrix
     global _user_id_to_idx
+
+    missing = missing_artifacts(data_dir, model_path)
+    if missing:
+        raise FileNotFoundError(
+            "Missing model/data artifacts (they are not stored in git): "
+            + ", ".join(missing)
+            + ". See docs/artifacts.md for how to obtain them."
+        )
 
     data_dir = Path(data_dir)
     _idx_to_card = {}
@@ -92,7 +109,7 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
     logger.info(f"  {n_items} items loaded")
 
     # item_id ↔ item_idx maps
-    _item_id_to_idx = dict(zip(itf["item_id"], itf["item_idx"]))
+    _item_id_to_idx = dict(zip(itf["item_id"], itf["item_idx"], strict=False))
 
     # Canonical title map — for each title, pick the item_id with highest click_count
     # This handles the 466 titles that have multiple IDs (regional/re-upload duplicates)
@@ -137,7 +154,7 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
     # ── 2. Build user features ────────────────────────────────────────────────
     logger.info("Loading user features...")
     uf = pd.read_csv(data_dir / "user_features_final.csv")
-    _user_id_to_idx = dict(zip(uf["user_id"], uf["user_idx"]))
+    _user_id_to_idx = dict(zip(uf["user_id"], uf["user_idx"], strict=False))
     _user_feature_matrix = _build_user_feature_matrix(uf)
     logger.info(f"  User feature matrix shape: {_user_feature_matrix.shape}")
 

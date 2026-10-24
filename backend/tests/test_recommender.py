@@ -48,6 +48,29 @@ def test_duplicate_titles_map_to_most_clicked_id(catalogue):
     assert tokens == [3 + recommender.TOKEN_OFFSET_BERT4REC]
 
 
+def test_missing_artifacts_fail_with_a_clear_message(tmp_path):
+    with pytest.raises(FileNotFoundError) as error:
+        recommender.load_data(str(tmp_path), str(tmp_path / "bert4rec_v3.onnx"))
+
+    message = str(error.value)
+    for name in ("item_features_final.csv", "user_features_final.csv", "bert4rec_v3.onnx"):
+        assert name in message
+    assert "docs/artifacts.md" in message
+
+
+def test_sasrec_model_is_optional(tmp_path, monkeypatch):
+    from tests.fakes import FakeSession, write_catalogue
+
+    write_catalogue(tmp_path)
+    (tmp_path / "bert4rec.onnx").touch()
+    monkeypatch.setattr(recommender.ort, "InferenceSession", lambda path, **kw: FakeSession(path, 2))
+
+    recommender.load_data(str(tmp_path), str(tmp_path / "bert4rec.onnx"), str(tmp_path / "missing.onnx"))
+
+    assert recommender.is_loaded()
+    assert recommender._ort_session_sasrec is None
+
+
 # ── Title mapping ─────────────────────────────────────────────────────────────
 
 def test_only_exact_catalogue_titles_become_tokens(catalogue):

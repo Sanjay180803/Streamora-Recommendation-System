@@ -1,0 +1,41 @@
+{
+  "description": "Model and data files the backend needs at runtime. They are not stored in git. Paths are relative to the repository root. sha256 is null until the files are obtained and recorded with: python scripts/check_artifacts.py --record",
+  "files": [
+    {
+      "path": "data/bert4rec_v3.onnx",
+      "required": true,
+      "purpose": "BERT4Rec model graph (ONNX)",
+      "sha256": null
+    },
+    {
+      "path": "data/bert4rec_v3.onnx.data",
+      "required": true,
+      "purpose": "BERT4Rec external weights, loaded by ONNX Runtime from beside the .onnx file",
+      "sha256": null
+    },
+    {
+      "path": "data/sasrec_v3.onnx",
+      "required": false,
+      "purpose": "SASRec model graph; without it every request uses BERT4Rec",
+      "sha256": null
+    },
+    {
+      "path": "data/sasrec_v3.onnx.data",
+      "required": false,
+      "purpose": "SASRec external weights",
+      "sha256": null
+    },
+    {
+      "path": "data/item_features_final.csv",
+      "required": true,
+      "purpose": "Catalogue: item ids, model indices, titles, years, genres, popularity",
+      "sha256": null
+    },
+    {
+      "path": "data/user_features_final.csv",
+      "required": true,
+      "purpose": "User feature table; loaded at startup but inference currently uses a zero user vector",
+      "sha256": null
+    }
+  ]
+}

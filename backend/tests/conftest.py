@@ -51,6 +51,7 @@ def catalogue(tmp_path, monkeypatch):
     write_catalogue(tmp_path)
     bert_path = tmp_path / "bert4rec.onnx"
     sasrec_path = tmp_path / "sasrec.onnx"
+    bert_path.touch()
     sasrec_path.touch()  # load_data only loads SASRec when the file exists
 
     sessions = {"bert4rec": None, "sasrec": None}
