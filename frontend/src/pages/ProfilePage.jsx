@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { apiFetch } from '../api/client'
 import './ProfilePage.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 const AVATAR_OPTIONS = [
   { icon: '🎬', color: '#e50914' },
@@ -45,15 +45,13 @@ export default function ProfilePage() {
     setSaving(true)
     setError('')
     try {
-      const res = await fetch(`${API_BASE}/profiles/create`, {
+      const res = await apiFetch('/profiles/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_email: user?.email,
+        body: {
           name: newName.trim(),
           color: selectedAvatar.color,
           icon: selectedAvatar.icon,
-        }),
+        },
       })
       const data = await res.json()
       if (!res.ok) { setError(data.detail || 'Failed to create profile.'); setSaving(false); return }
@@ -69,10 +67,9 @@ export default function ProfilePage() {
     e.stopPropagation()
     if (!window.confirm('Delete this profile? All its data will be lost.')) return
     try {
-      const res = await fetch(`${API_BASE}/profiles/delete`, {
+      const res = await apiFetch('/profiles/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_email: user?.email, profile_id: profileId }),
+        body: { profile_id: profileId },
       })
       if (res.ok) {
         const remaining = profiles.filter(p => p.id !== profileId)
@@ -91,10 +88,9 @@ export default function ProfilePage() {
       alert('A profile with this name already exists.'); return
     }
     try {
-      const res = await fetch(`${API_BASE}/profiles/rename`, {
+      const res = await apiFetch('/profiles/rename', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_email: user?.email, profile_id: profileId, new_name: newNameVal.trim() }),
+        body: { profile_id: profileId, new_name: newNameVal.trim() },
       })
       if (res.ok) login({ ...user, profiles: profiles.map(p => p.id === profileId ? { ...p, name: newNameVal.trim() } : p) })
     } catch { alert('Failed to rename profile.') }

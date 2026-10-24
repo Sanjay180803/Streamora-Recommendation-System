@@ -45,6 +45,8 @@ services:
       - SASREC_MODEL_PATH=/app/data/sasrec_v3.onnx
       - MIN_SEQUENCE_LENGTH=1
       - TMDB_TOKEN=${TMDB_TOKEN:-}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET (at least 32 characters)}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost}
     restart: unless-stopped
 
   frontend:

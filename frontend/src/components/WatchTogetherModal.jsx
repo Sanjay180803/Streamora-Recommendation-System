@@ -19,15 +19,6 @@ export default function WatchTogetherModal({ movie, onClose, onPartyStart }) {
     setMessage('')
 
     try {
-      const checkRes  = await fetch(`${API_BASE}/auth/check/${encodeURIComponent(email.trim())}`)
-      const checkData = await checkRes.json()
-
-      if (!checkData.exists) {
-        setStatus('error')
-        setMessage(`No STREAMORA account found for ${email}. Ask them to sign up first.`)
-        return
-      }
-
       if (email.trim().toLowerCase() === user?.email?.toLowerCase()) {
         setStatus('error')
         setMessage("You can't invite yourself.")

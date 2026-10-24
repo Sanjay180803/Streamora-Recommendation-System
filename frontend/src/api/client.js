@@ -2,27 +2,79 @@ import axios from 'axios'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
+export const API_BASE = BASE_URL
+const TOKEN_KEY = 'nf_token'
+
+// ── Access token ───────────────────────────────────────────────────────────
+export function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
+}
+
+export function setToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch { /* storage unavailable */ }
+}
+
+function authHeaders() {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// An expired or invalid token logs the user out (AuthContext listens for this)
+function handleUnauthorized(status) {
+  if (status === 401 && getToken()) window.dispatchEvent(new Event('auth:expired'))
+}
+
+// fetch() wrapper for backend routes: adds the bearer token and JSON headers
+export async function apiFetch(path, { body, headers, ...options } = {}) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...authHeaders(),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  handleUnauthorized(res.status)
+  return res
+}
+
+function withAuth(client) {
+  client.interceptors.request.use(config => {
+    Object.assign(config.headers, authHeaders())
+    return config
+  })
+  client.interceptors.response.use(
+    res => res,
+    err => { handleUnauthorized(err.response?.status); return Promise.reject(err) },
+  )
+  return client
+}
+
 // ── FastAPI client ─────────────────────────────────────────────────────────
-const api = axios.create({ baseURL: BASE_URL, timeout: 15000 })
+const api = withAuth(axios.create({ baseURL: BASE_URL, timeout: 15000 }))
 
 // ── TMDB client ────────────────────────────────────────────────────────────
 // Requests go through the backend proxy, which holds the TMDB token.
-const tmdb = axios.create({ baseURL: `${BASE_URL}/tmdb`, timeout: 10000 })
+const tmdb = withAuth(axios.create({ baseURL: `${BASE_URL}/tmdb`, timeout: 10000 }))
 
 // ── FastAPI calls ──────────────────────────────────────────────────────────
 
-export async function getRecommendations(watchHistory, sessionId, topK = 20) {
+export async function getRecommendations(watchHistory, profileId, topK = 20) {
   const items = watchHistory.map(item =>
     typeof item === 'string'
       ? { title: item, genres: [], release_year: null }
       : { title: item.title, genres: item.genres || [], release_year: item.release_year || null }
   )
-  const res = await api.post('/recommend', { watch_history: items, session_id: sessionId, top_k: topK })
+  const res = await api.post('/recommend', { watch_history: items, profile_id: profileId, top_k: topK })
   return res.data
 }
 
-export async function sendFeedback(sessionId, movieId, signal, modelVariant) {
-  const res = await api.post('/feedback', { session_id: sessionId, movie_id: movieId, signal, model_variant: modelVariant })
+export async function sendFeedback(profileId, movieId, signal, modelVariant) {
+  const res = await api.post('/feedback', { profile_id: profileId, movie_id: movieId, signal, model_variant: modelVariant })
   return res.data
 }
 

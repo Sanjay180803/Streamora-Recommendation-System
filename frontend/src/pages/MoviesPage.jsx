@@ -6,7 +6,8 @@ import MovieModal from '../components/MovieModal'
 import './HomePage.css'
 
 export default function MoviesPage() {
-  const { sessionId, watchHistory } = useAuth()
+  const { profile, watchHistory } = useAuth()
+  const profileId = profile?.id
   const [recs, setRecs]           = useState([])
   const [popular, setPopular]     = useState([])
   const [nowPlaying, setNowPlaying] = useState([])
@@ -31,7 +32,7 @@ export default function MoviesPage() {
         try {
           const storedHistory = localStorage.getItem('nf_history')
           const freshHistory = storedHistory ? JSON.parse(storedHistory) : []
-          const recRes = await getRecommendations(freshHistory, sessionId, 20)
+          const recRes = await getRecommendations(freshHistory, profileId, 20)
           setRecs(recRes.recommendations || [])
           setModelVariant(recRes.model_variant)
         } catch (e) { console.error(e) }
@@ -39,7 +40,7 @@ export default function MoviesPage() {
       setLoading(false)
     }
     load()
-  }, [sessionId])
+  }, [profileId])
 
   const handleClick = useCallback((movie, tmdbData) => {
     setSelectedMovie(movie)

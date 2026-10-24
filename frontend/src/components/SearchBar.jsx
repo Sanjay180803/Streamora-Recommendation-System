@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { searchTMDB } from '../api/client'
+import { apiFetch, searchTMDB } from '../api/client'
 import './SearchBar.css'
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 async function searchCatalogue(query) {
   try {
-    const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&top_k=8`)
+    const res = await apiFetch(`/search?q=${encodeURIComponent(query)}&top_k=8`)
     const data = await res.json()
     return (data.results || []).map(r => ({
       ...r, _source: 'catalogue', _mediaType: 'movie',

@@ -7,14 +7,14 @@ for all 9,387 catalogue items, serves cosine similarity search.
 Add to recommender.py globals and load_data(), then wire up in main.py.
 """
 
-import numpy as np
-from sentence_transformers import SentenceTransformer
 import logging
+
+import numpy as np
 
 logger = logging.getLogger("recommender")
 
 # ── Globals ───────────────────────────────────────────────────────────────────
-_search_model: SentenceTransformer | None = None
+_search_model = None  # SentenceTransformer, imported lazily (pulls in PyTorch)
 _item_embeddings: np.ndarray | None = None   # shape: [N, 384]
 _item_search_index: list[dict] | None = None  # [{item_idx, item_id, title, genres, release_year}]
 
@@ -25,6 +25,8 @@ def load_search_index(item_features_df) -> None:
     Builds text descriptions for all catalogue items and computes embeddings.
     """
     global _search_model, _item_embeddings, _item_search_index
+
+    from sentence_transformers import SentenceTransformer
 
     logger.info("Loading semantic search model (all-MiniLM-L6-v2)...")
     _search_model = SentenceTransformer("all-MiniLM-L6-v2")

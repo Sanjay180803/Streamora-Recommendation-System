@@ -5,7 +5,7 @@ import WatchTogetherModal from './WatchTogetherModal'
 import './MovieModal.css'
 
 export default function MovieModal({ movie, tmdbData: initialTmdbData, modelVariant, onClose, onWatchTogether, source, onFeedback }) {
-  const { sessionId, addToContinueWatching } = useAuth()
+  const { profile, addToContinueWatching } = useAuth()
   const [tmdbData, setTmdbData]           = useState(initialTmdbData || null)
   const [trailerKey, setTrailerKey]       = useState(null)
   const [showTrailer, setShowTrailer]     = useState(false)
@@ -67,7 +67,7 @@ export default function MovieModal({ movie, tmdbData: initialTmdbData, modelVari
     setFeedbackGiven(signal)
     onFeedback?.(movie.item_id, signal, modelVariant)
     try {
-      await sendFeedback(sessionId, movie.item_id, signal, modelVariant)
+      await sendFeedback(profile?.id, movie.item_id, signal, modelVariant)
     } catch (e) { console.error('Feedback error:', e) }
   }
 

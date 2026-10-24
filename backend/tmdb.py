@@ -13,9 +13,15 @@ import re
 import time
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-router = APIRouter(prefix="/tmdb", tags=["tmdb"])
+from security import get_current_user
+
+router = APIRouter(
+    prefix="/tmdb",
+    tags=["tmdb"],
+    dependencies=[Depends(get_current_user)],
+)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 CACHE_TTL_SEC = 600

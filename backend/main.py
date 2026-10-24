@@ -27,9 +27,13 @@ from datetime import datetime, timezone
 
 import redis as redis_lib
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from database import init_db
+from sqlalchemy.orm import Session
+
+from config import settings
+from database import User, get_db, init_db
+from security import get_current_user, get_owned_profile
 from auth import router as auth_router
 from tmdb import router as tmdb_router
 
@@ -157,12 +161,12 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(tmdb_router)
 
-# CORS — allow the React frontend (and localhost dev) to call this API
+# CORS — only the configured frontend origins may call this API from a browser
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -193,7 +197,11 @@ def health():
 
 
 @app.post("/recommend", response_model=RecommendResponse)
-def recommend(req: RecommendRequest):
+def recommend(
+    req: RecommendRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Main recommendation endpoint.
 
@@ -207,12 +215,13 @@ def recommend(req: RecommendRequest):
       7. Return recommendations + metadata
 
     Request body:
-      { "watch_history": ["Movie Title 1", ...], "session_id": "uuid", "top_k": 10 }
+      { "watch_history": [{"title": "Movie Title 1"}, ...], "profile_id": "uuid", "top_k": 10 }
     """
     t_start = time.perf_counter()
+    get_owned_profile(req.profile_id, user, db)
 
     # ── 1. Cache check ────────────────────────────────────────────────────────
-    cache_key = recommender.make_cache_key(req.session_id, req.watch_history, req.top_k)
+    cache_key = recommender.make_cache_key(req.profile_id, req.watch_history, req.top_k)
     cache_hit = False
 
     if _redis:
@@ -236,7 +245,7 @@ def recommend(req: RecommendRequest):
     # ── 2–5. Inference ────────────────────────────────────────────────────────
     try:
         cards, model_variant, cold_start = recommender.get_recommendations(
-            session_id=req.session_id,
+            session_id=req.profile_id,
             watch_history=req.watch_history,
             top_k=req.top_k,
             redis_client=_redis,
@@ -248,7 +257,7 @@ def recommend(req: RecommendRequest):
     # ── Option A: Filter hard negatives ──────────────────────────────────────
     if _redis and cards:
         try:
-            never_key = f"never:{req.session_id}"
+            never_key = f"never:{req.profile_id}"
             never_set = _redis.smembers(never_key)
             if never_set:
                 never_ids = {m.decode() if isinstance(m, bytes) else m for m in never_set}
@@ -286,7 +295,11 @@ def recommend(req: RecommendRequest):
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
-def feedback(req: FeedbackRequest):
+def feedback(
+    req: FeedbackRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Log a thumbs up (signal=1) or thumbs down (signal=-1).
 
@@ -295,11 +308,12 @@ def feedback(req: FeedbackRequest):
     If Kafka is unavailable, the event is logged to stdout instead.
 
     Request body:
-      { "session_id": "uuid", "movie_id": "e847f14da5",
+      { "profile_id": "uuid", "movie_id": "e847f14da5",
         "signal": 1, "model_variant": "bert4rec" }
     """
+    get_owned_profile(req.profile_id, user, db)
     event = {
-        "session_id":    req.session_id,
+        "profile_id":    req.profile_id,
         "movie_id":      req.movie_id,
         "signal":        req.signal,
         "model_variant": req.model_variant,
@@ -324,7 +338,7 @@ def genres():
 
 
 @app.get("/search")
-async def search(q: str, top_k: int = 10):
+def search(q: str, top_k: int = 10, user: User = Depends(get_current_user)):
     """
     Semantic search over the catalogue.
     Returns catalogue movies most similar to the query by meaning.
