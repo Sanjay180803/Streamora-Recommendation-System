@@ -137,6 +137,7 @@ def send_invite(
         created_by=user.email,
     )
     db.add(room)
+    db.flush()  # the invite references the room, so insert the room first
     if recipient is not None:
         db.add(WatchInvite(
             id=str(uuid.uuid4()),
