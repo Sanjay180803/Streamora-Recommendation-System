@@ -202,13 +202,13 @@ Reporting and session policy: [SECURITY.md](SECURITY.md).
 ## Contributions
 
 **Original project** ([upstream](https://github.com/RP-1106/Streamora-Recommendation-System), team project).
-Commits by RP-1106, Rhea Pandita, Themozhi and Sanjay Balasubramaniam built the
-FastAPI service with BERT4Rec/SASRec ONNX inference, the React frontend,
+The original team, including RP-1106 (Rhea Pandita) and Sanjay Balasubramaniam,
+built the FastAPI service with BERT4Rec/SASRec ONNX inference, the React frontend,
 profiles, semantic search, the feedback loop, Watch Party and per-profile
 history. Sanjay's upstream commit added Watch Party, per-profile history,
 navigation pages, semantic search and the feedback loop.
 
-**This fork** (Sanjay Balasubramaniam), on branch `sanjay/repository-hardening`:
+**This fork** (Sanjay Balasubramaniam), merged in [#1](https://github.com/Sanjay180803/Streamora-Recommendation-System/pull/1):
 
 - Moved the TMDB credential out of the browser bundle behind an allowlisted
   backend proxy
