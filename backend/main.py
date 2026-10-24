@@ -36,6 +36,7 @@ from database import User, get_db, init_db
 from security import get_current_user, get_owned_profile
 from auth import router as auth_router
 from tmdb import router as tmdb_router
+from watch_party import router as watch_party_router
 
 import recommender
 from semantic_search import semantic_search
@@ -160,6 +161,7 @@ app = FastAPI(
 )
 app.include_router(auth_router)
 app.include_router(tmdb_router)
+app.include_router(watch_party_router)
 
 # CORS — only the configured frontend origins may call this API from a browser
 app.add_middleware(

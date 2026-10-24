@@ -1,18 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getTrailerKey, parseTMDBItemId } from '../api/client'
+import { API_BASE, getToken, getTrailerKey, parseTMDBItemId } from '../api/client'
 import './WatchPartyPage.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 const WS_BASE  = API_BASE.replace('http', 'ws')
 
 export default function WatchPartyPage({ roomId, movieId, movieTitle, onLeave }) {
-  const { user, profile } = useAuth()
-  const userName = user?.name || profile?.name || 'Guest'
+  const { user, logout } = useAuth()
+  // The server sets each chat message's sender to the account name
+  const userName = user?.name
 
   const [messages, setMessages]     = useState([])
   const [input, setInput]           = useState('')
   const [connected, setConnected]   = useState(false)
+  const [error, setError]           = useState('')
   const [participants, setParticipants] = useState(1)
   const wsRef    = useRef(null)
   const chatRef  = useRef(null)
@@ -28,10 +29,13 @@ export default function WatchPartyPage({ roomId, movieId, movieTitle, onLeave })
 
   // Connect WebSocket
   useEffect(() => {
-    const ws = new WebSocket(`${WS_BASE}/ws/room/${roomId}?name=${encodeURIComponent(userName)}`)
+    const ws = new WebSocket(`${WS_BASE}/ws/room/${roomId}`)
     wsRef.current = ws
 
     ws.onopen = () => {
+      // Browsers cannot send an Authorization header on a WebSocket, so the
+      // access token is sent as the first message instead.
+      ws.send(JSON.stringify({ type: 'auth', token: getToken() }))
       setConnected(true)
       setMessages(prev => [...prev, {
         type: 'system',
@@ -41,17 +45,21 @@ export default function WatchPartyPage({ roomId, movieId, movieTitle, onLeave })
     }
 
     ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
+      let msg
+      try { msg = JSON.parse(e.data) } catch { return }
+      if (msg.type === 'error') return
       setMessages(prev => [...prev, msg])
-      if (msg.type === 'system') {
-        setParticipants(prev => msg.text.includes('joined') ? prev + 1 : Math.max(1, prev - 1))
-      }
+      if (typeof msg.participants === 'number') setParticipants(msg.participants)
     }
 
-    ws.onclose = () => setConnected(false)
+    ws.onclose = (e) => {
+      setConnected(false)
+      if (e.code === 4401) logout()
+      else if (e.code === 4403) setError('You are not a participant in this watch party.')
+    }
 
     return () => ws.close()
-  }, [roomId, userName])
+  }, [roomId, logout])
 
   // Auto-scroll chat
   useEffect(() => {
@@ -62,11 +70,10 @@ export default function WatchPartyPage({ roomId, movieId, movieTitle, onLeave })
 
   const sendMessage = useCallback(() => {
     if (!input.trim() || !wsRef.current) return
-    const msg = { type: 'chat', text: input.trim(), sender: userName }
-    wsRef.current.send(JSON.stringify(msg))
+    wsRef.current.send(JSON.stringify({ type: 'chat', text: input.trim() }))
     setInput('')
     // Don't add locally — server broadcasts back to all including sender
-  }, [input, userName])
+  }, [input])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
@@ -81,7 +88,7 @@ export default function WatchPartyPage({ roomId, movieId, movieTitle, onLeave })
           <span className="wp-movie-name">🎬 {movieTitle}</span>
           <span className="wp-participants">👥 {participants} watching</span>
           <span className={`wp-status ${connected ? 'connected' : 'disconnected'}`}>
-            {connected ? '● Live' : '● Connecting...'}
+            {error || (connected ? '● Live' : '● Connecting...')}
           </span>
         </div>
         <button className="wp-leave-btn" onClick={onLeave}>Leave Party</button>

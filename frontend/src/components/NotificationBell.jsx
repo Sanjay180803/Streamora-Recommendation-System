@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { apiFetch } from '../api/client'
 import './NotificationBell.css'
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 export default function NotificationBell({ onAccept }) {
   const { user, addToContinueWatching } = useAuth()
@@ -14,7 +13,8 @@ export default function NotificationBell({ onAccept }) {
     if (!user?.email) return
     const poll = async () => {
       try {
-        const res  = await fetch(`${API_BASE}/invite/pending/${encodeURIComponent(user.email)}`)
+        const res  = await apiFetch('/invite/pending')
+        if (!res.ok) return
         const data = await res.json()
         setInvites(data.invites || [])
       } catch {}
@@ -34,10 +34,9 @@ export default function NotificationBell({ onAccept }) {
 
   const respond = async (inviteId, action, invite) => {
     try {
-      const res  = await fetch(`${API_BASE}/invite/respond`, {
+      const res  = await apiFetch('/invite/respond', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invite_id: inviteId, action }),
+        body: { invite_id: inviteId, action },
       })
       const data = await res.json()
       setInvites(prev => prev.filter(i => i.id !== inviteId))
