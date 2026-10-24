@@ -28,7 +28,6 @@ COPY data/user_features_final.csv /app/data/user_features_final.csv
 ENV DATA_DIR=/app/data
 ENV MODEL_PATH=/app/data/bert4rec_v3.onnx
 ENV SASREC_MODEL_PATH=/app/data/sasrec_v3.onnx
-ENV MIN_SEQUENCE_LENGTH=1
 ENV REDIS_URL=redis://redis:6379
 ENV KAFKA_BOOTSTRAP=kafka:9092
 

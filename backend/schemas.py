@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 # ─────────────────────────────────────────────────────────────────────────────
 # REQUEST MODELS  (what the frontend sends to FastAPI)
@@ -32,12 +32,13 @@ class FeedbackRequest(BaseModel):
     profile_id:    profile giving the feedback — must belong to the caller
     movie_id:      the item_id string of the movie being rated (e.g. 'e847f14da5')
     signal:        1 = thumbs up, -1 = thumbs down
-    model_variant: which model served this recommendation ('bert4rec' or 'sasrec')
+
+    The model that served the item is looked up server-side; any model_variant
+    sent by an older client is ignored.
     """
     profile_id: str
-    movie_id: str
-    signal: int = Field(..., ge=-1, le=1)
-    model_variant: str
+    movie_id: str = Field(min_length=1, max_length=100)
+    signal: Literal[-1, 1]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,14 +61,18 @@ class RecommendResponse(BaseModel):
     """
     Returned by POST /recommend.
     recommendations: ordered list of MovieCard (highest-ranked first)
-    model_variant:   which model was used — frontend logs this for A/B tracking
+    model_variant:   'bert4rec', 'sasrec', or 'popularity' for cold-start responses
     cache_hit:       True if result came from Redis (for debugging / latency display)
-    cold_start:      True if user had too few interactions and got popularity fallback
+    cold_start:      True if too few history titles matched the catalogue
+    matched_items:   history titles found in the catalogue (fed to the model)
+    unmatched_items: history titles not in the catalogue (ignored)
     """
     recommendations: list[MovieCard]
     model_variant: str
     cache_hit: bool
     cold_start: bool
+    matched_items: int
+    unmatched_items: int
 
 
 class FeedbackResponse(BaseModel):

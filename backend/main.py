@@ -4,42 +4,29 @@ FastAPI application entrypoint.
 
 Endpoints:
   GET  /health          — liveness check (Docker healthcheck, monitoring)
-  POST /recommend       — get movie recommendations for a watch history
-  POST /feedback        — log a thumbs up / thumbs down signal
+  POST /recommend       — get movie recommendations for a profile's watch history
+  POST /feedback        — record a thumbs up / thumbs down signal
   GET  /genres          — list all genres in the catalogue
+  GET  /search          — semantic search over the catalogue
 
-Environment variables (set in .env):
-  REDIS_URL             — redis://localhost:6379
-  KAFKA_BOOTSTRAP       — localhost:9092
-  DATA_DIR              — path to folder containing the three cleaned CSVs
-  MODEL_PATH            — path to bert4rec.onnx
-  COLD_START_K          — how many items to return for cold-start users (default 10)
-  MIN_SEQUENCE_LENGTH   — minimum sequence length before cold-start fallback (default 5)
-  MAX_SEQUENCE_LENGTH   — model's max input length (default 50)
+Configuration is read from the environment by config.py; see backend/.env.example.
 """
 
 import json
 import logging
-import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import redis as redis_lib
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+import recommender
+from auth import router as auth_router
 from config import settings
 from database import User, get_db, init_db
-from security import get_current_user, get_owned_profile
-from auth import router as auth_router
-from tmdb import router as tmdb_router
-from watch_party import router as watch_party_router
-
-import recommender
-from semantic_search import semantic_search
 from schemas import (
     FeedbackRequest,
     FeedbackResponse,
@@ -48,25 +35,22 @@ from schemas import (
     RecommendRequest,
     RecommendResponse,
 )
+from security import get_current_user, get_owned_profile
+from semantic_search import semantic_search
+from tmdb import router as tmdb_router
+from watch_party import router as watch_party_router
 
-load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIG  (from environment)
-# ─────────────────────────────────────────────────────────────────────────────
-
-DATA_DIR      = os.getenv("DATA_DIR", "../data/output")
-MODEL_PATH       = os.getenv("MODEL_PATH", "../data/bert4rec_v3.onnx")
-SASREC_PATH      = os.getenv("SASREC_MODEL_PATH", "../data/sasrec_v3.onnx")
-REDIS_URL     = os.getenv("REDIS_URL", "redis://localhost:6379")
-KAFKA_BOOT    = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
-COLD_START_K  = int(os.getenv("COLD_START_K", "10"))
-CACHE_TTL_SEC = 3600  # cache recommendation results for 1 hour
+SERVED_TTL_SEC = 24 * 3600  # how long feedback can be attributed to a served model
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REDIS CLIENT  (module-level, reconnects automatically)
+# REDIS KEYS
+#   rec:{profile}:{digest}       cached recommendation response
+#   never:{profile}              set of thumbs-down item ids (suppressed)
+#   served:{profile}             hash item_id → model variant that served it
+#   bandit:{variant}:wins|losses Thompson-sampling counters
 # ─────────────────────────────────────────────────────────────────────────────
 
 _redis: redis_lib.Redis | None = None
@@ -76,8 +60,25 @@ def get_redis() -> redis_lib.Redis | None:
     return _redis
 
 
+def _disliked_items(profile_id: str) -> set[str]:
+    if _redis is None:
+        return set()
+    try:
+        return set(_redis.smembers(f"never:{profile_id}"))
+    except Exception as e:
+        logger.warning(f"Redis read error: {e}")
+        return set()
+
+
+def _invalidate_cached_recommendations(profile_id: str) -> None:
+    for key in _redis.scan_iter(match=f"rec:{profile_id}:*"):
+        _redis.delete(key)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# KAFKA PRODUCER  (optional — if Kafka is down, feedback still works via logging)
+# KAFKA PRODUCER  (optional — enabled only when KAFKA_BOOTSTRAP is set)
+# Feedback events are published to the 'user_feedback' topic for downstream
+# consumers. This repository does not include a consumer.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _kafka_producer = None
@@ -85,10 +86,13 @@ _kafka_producer = None
 
 def _init_kafka():
     global _kafka_producer
+    if not settings.kafka_bootstrap:
+        logger.info("Kafka disabled (KAFKA_BOOTSTRAP not set)")
+        return
     try:
         from kafka import KafkaProducer
         _kafka_producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BOOT,
+            bootstrap_servers=settings.kafka_bootstrap,
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             request_timeout_ms=3000,
             retries=3,
@@ -100,13 +104,12 @@ def _init_kafka():
 
 
 def _publish_feedback(event: dict):
-    """Publish a feedback event to Kafka topic 'user_feedback'. Non-blocking."""
+    """Publish a feedback event to Kafka topic 'user_feedback' when enabled."""
     if _kafka_producer is not None:
         try:
             _kafka_producer.send("user_feedback", event)
         except Exception as e:
             logger.warning(f"Kafka publish failed: {e}")
-    # Always log it — Streamlit dashboard can also tail the app log
     logger.info(f"FEEDBACK  {json.dumps(event)}")
 
 
@@ -123,19 +126,21 @@ async def lifespan(app: FastAPI):
     init_db()
 
     # Load data and ONNX model into memory
-    recommender.load_data(DATA_DIR, MODEL_PATH, SASREC_PATH)
+    recommender.load_data(
+        settings.data_dir, settings.bert4rec_model_path, settings.sasrec_model_path
+    )
     logger.info(f"Items in catalogue: {recommender.item_count()}")
 
-    # Connect to Redis
-    try:
-        _redis = redis_lib.from_url(REDIS_URL, decode_responses=True)
-        _redis.ping()
-        logger.info("Redis connected ✓")
-    except Exception as e:
-        logger.warning(f"Redis not available ({e}). Caching disabled.")
-        _redis = None
+    # Connect to Redis (optional — caching, dislike suppression and the bandit need it)
+    if settings.redis_url:
+        try:
+            _redis = redis_lib.from_url(settings.redis_url, decode_responses=True)
+            _redis.ping()
+            logger.info("Redis connected ✓")
+        except Exception as e:
+            logger.warning(f"Redis not available ({e}). Caching and feedback memory disabled.")
+            _redis = None
 
-    # Connect to Kafka (optional)
     _init_kafka()
 
     logger.info("=== Ready to serve requests ===")
@@ -154,9 +159,9 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Netflix Recommendation System",
+    title="Streamora Recommendation API",
     version="1.0.0",
-    description="BERT4Rec / SASRec recommendation API with A/B testing",
+    description="BERT4Rec / SASRec recommendation API with Thompson-sampling model routing",
     lifespan=lifespan,
 )
 app.include_router(auth_router)
@@ -208,13 +213,12 @@ def recommend(
     Main recommendation endpoint.
 
     Flow:
-      1. Check Redis cache — if hit, return immediately (~1ms)
-      2. Determine A/B model variant from session_id hash
-      3. Build token sequence from watch_history titles
-      4. If sequence too short → cold-start popularity fallback
-      5. Else → run ONNX inference
-      6. Write result to Redis cache (TTL = 1 hour)
-      7. Return recommendations + metadata
+      1. Check Redis cache — if hit, return immediately
+      2. Choose a model variant (Thompson sampling once enough feedback exists)
+      3. Map watch-history titles to catalogue items (exact matches only)
+      4. Too few matches → cold-start popularity fallback
+      5. Else → ONNX inference, excluding watched and thumbs-down items
+      6. Remember which model served each item, then cache the response
 
     Request body:
       { "watch_history": [{"title": "Movie Title 1"}, ...], "profile_id": "uuid", "top_k": 10 }
@@ -224,7 +228,6 @@ def recommend(
 
     # ── 1. Cache check ────────────────────────────────────────────────────────
     cache_key = recommender.make_cache_key(req.profile_id, req.watch_history, req.top_k)
-    cache_hit = False
 
     if _redis:
         try:
@@ -236,64 +239,57 @@ def recommend(
                     f"latency={1000*(time.perf_counter()-t_start):.1f}ms"
                 )
                 return RecommendResponse(
-                    recommendations=[MovieCard(**m) for m in data["recommendations"]],
-                    model_variant=data["model_variant"],
+                    **{**data, "recommendations": [MovieCard(**m) for m in data["recommendations"]]},
                     cache_hit=True,
-                    cold_start=data["cold_start"],
                 )
         except Exception as e:
             logger.warning(f"Redis read error: {e}")
 
     # ── 2–5. Inference ────────────────────────────────────────────────────────
     try:
-        cards, model_variant, cold_start = recommender.get_recommendations(
+        result = recommender.get_recommendations(
             session_id=req.profile_id,
             watch_history=req.watch_history,
             top_k=req.top_k,
             redis_client=_redis,
+            exclude_item_ids=_disliked_items(req.profile_id),
+            min_sequence_length=settings.min_sequence_length,
         )
     except Exception as e:
         logger.error(f"Inference error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Inference failed. See server logs.")
 
-    # ── Option A: Filter hard negatives ──────────────────────────────────────
-    if _redis and cards:
-        try:
-            never_key = f"never:{req.profile_id}"
-            never_set = _redis.smembers(never_key)
-            if never_set:
-                never_ids = {m.decode() if isinstance(m, bytes) else m for m in never_set}
-                before = len(cards)
-                cards = [c for c in cards if c.item_id not in never_ids]
-                if len(cards) < before:
-                    logger.info(f"  Hard negative filter: removed {before - len(cards)} disliked movies")
-        except Exception as e:
-            logger.warning(f"Hard negative filter error: {e}")
+    response = RecommendResponse(
+        recommendations=result.cards,
+        model_variant=result.model_variant,
+        cache_hit=False,
+        cold_start=result.cold_start,
+        matched_items=result.matched_items,
+        unmatched_items=result.unmatched_items,
+    )
 
-    # ── 6. Write to cache ─────────────────────────────────────────────────────
-    if _redis and cards:
+    # ── 6. Attribution + cache ────────────────────────────────────────────────
+    if _redis and result.cards:
         try:
-            payload = json.dumps({
-                "recommendations": [c.model_dump() for c in cards],
-                "model_variant": model_variant,
-                "cold_start": cold_start,
-            })
-            _redis.setex(cache_key, CACHE_TTL_SEC, payload)
+            if result.model_variant in recommender.MODEL_VARIANTS:
+                served_key = f"served:{req.profile_id}"
+                _redis.hset(served_key, mapping={c.item_id: result.model_variant for c in result.cards})
+                _redis.expire(served_key, SERVED_TTL_SEC)
+            _redis.setex(
+                cache_key,
+                settings.recommendation_cache_ttl_sec,
+                response.model_dump_json(exclude={"cache_hit"}),
+            )
         except Exception as e:
             logger.warning(f"Redis write error: {e}")
 
     latency_ms = 1000 * (time.perf_counter() - t_start)
     logger.info(
-        f"Cache MISS  variant={model_variant}  cold_start={cold_start}  "
-        f"n_results={len(cards)}  latency={latency_ms:.1f}ms"
+        f"Cache MISS  variant={result.model_variant}  cold_start={result.cold_start}  "
+        f"matched={result.matched_items}  unmatched={result.unmatched_items}  "
+        f"n_results={len(result.cards)}  latency={latency_ms:.1f}ms"
     )
-
-    return RecommendResponse(
-        recommendations=cards,
-        model_variant=model_variant,
-        cache_hit=False,
-        cold_start=cold_start,
-    )
+    return response
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
@@ -303,25 +299,46 @@ def feedback(
     db: Session = Depends(get_db),
 ):
     """
-    Log a thumbs up (signal=1) or thumbs down (signal=-1).
+    Record a thumbs up (signal=1) or thumbs down (signal=-1).
 
-    The event is published to Kafka topic 'user_feedback' so the
-    Streamlit A/B dashboard can consume it in real time.
-    If Kafka is unavailable, the event is logged to stdout instead.
+    With Redis available:
+      - The model that served the item (recorded by /recommend) gets a win or a
+        loss for Thompson sampling. Each served item counts at most once.
+      - Thumbs down adds the item to the profile's suppression set for
+        DISLIKE_SUPPRESSION_DAYS (refreshed on every new dislike).
+      - Cached recommendations for the profile are invalidated.
 
-    Request body:
-      { "profile_id": "uuid", "movie_id": "e847f14da5",
-        "signal": 1, "model_variant": "bert4rec" }
+    The event is also logged and, when Kafka is enabled, published to the
+    'user_feedback' topic.
     """
     get_owned_profile(req.profile_id, user, db)
-    event = {
+    variant = None
+
+    if _redis:
+        try:
+            served_key = f"served:{req.profile_id}"
+            variant = _redis.hget(served_key, req.movie_id)
+            if variant in recommender.MODEL_VARIANTS:
+                outcome = "wins" if req.signal == 1 else "losses"
+                _redis.incr(f"bandit:{variant}:{outcome}")
+                _redis.hdel(served_key, req.movie_id)
+
+            if req.signal == -1:
+                never_key = f"never:{req.profile_id}"
+                _redis.sadd(never_key, req.movie_id)
+                _redis.expire(never_key, settings.dislike_suppression_days * 24 * 3600)
+
+            _invalidate_cached_recommendations(req.profile_id)
+        except Exception as e:
+            logger.warning(f"Redis feedback error: {e}")
+
+    _publish_feedback({
         "profile_id":    req.profile_id,
         "movie_id":      req.movie_id,
         "signal":        req.signal,
-        "model_variant": req.model_variant,
+        "model_variant": variant,
         "timestamp":     datetime.now(timezone.utc).isoformat(),
-    }
-    _publish_feedback(event)
+    })
     return FeedbackResponse(status="ok")
 
 
@@ -331,10 +348,8 @@ def genres():
     Return the list of all genres in the item catalogue.
     The React frontend uses this to populate the genre filter dropdown.
     """
-    # Extract genre names from the MovieCard genre lists
     all_genres: set[str] = set()
-    from recommender import _idx_to_card
-    for card in _idx_to_card.values():
+    for card in recommender._idx_to_card.values():
         all_genres.update(card.genres)
     return {"genres": sorted(all_genres)}
 
@@ -348,9 +363,9 @@ def search(q: str, top_k: int = 10, user: User = Depends(get_current_user)):
     """
     if not q or len(q.strip()) < 2:
         return {"results": [], "query": q}
-    
-    results = semantic_search(q.strip(), top_k=min(top_k, 20))
-    
+
+    results = semantic_search(q.strip()[:200], top_k=max(1, min(top_k, 20)))
+
     # Convert to MovieCard format
     cards = []
     for r in results:
@@ -365,6 +380,5 @@ def search(q: str, top_k: int = 10, user: User = Depends(get_current_user)):
                 "log_popularity": card.log_popularity,
                 "similarity_score": round(r["score"], 3),
             })
-    
-    return {"results": cards, "query": q}
 
+    return {"results": cards, "query": q}

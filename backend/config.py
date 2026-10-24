@@ -33,6 +33,14 @@ class Settings:
     jwt_secret: str
     jwt_expire_minutes: int
     cors_origins: list[str]
+    data_dir: str
+    bert4rec_model_path: str
+    sasrec_model_path: str
+    redis_url: str            # empty string disables Redis
+    kafka_bootstrap: str      # empty string disables Kafka
+    min_sequence_length: int  # matched titles needed before using a model
+    recommendation_cache_ttl_sec: int
+    dislike_suppression_days: int
 
 
 def load_settings() -> Settings:
@@ -50,10 +58,20 @@ def load_settings() -> Settings:
     if "*" in origins:
         raise ConfigError("CORS_ORIGINS must list explicit origins, not '*'")
 
+    data_dir = os.getenv("DATA_DIR", "../data")
+
     return Settings(
         jwt_secret=jwt_secret,
         jwt_expire_minutes=_int("JWT_EXPIRE_MINUTES", 60),
         cors_origins=origins,
+        data_dir=data_dir,
+        bert4rec_model_path=os.getenv("MODEL_PATH", os.path.join(data_dir, "bert4rec_v3.onnx")),
+        sasrec_model_path=os.getenv("SASREC_MODEL_PATH", os.path.join(data_dir, "sasrec_v3.onnx")),
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+        kafka_bootstrap=os.getenv("KAFKA_BOOTSTRAP", ""),
+        min_sequence_length=_int("MIN_SEQUENCE_LENGTH", 5),
+        recommendation_cache_ttl_sec=_int("RECOMMENDATION_CACHE_TTL_SEC", 3600),
+        dislike_suppression_days=_int("DISLIKE_SUPPRESSION_DAYS", 30),
     )
 
 

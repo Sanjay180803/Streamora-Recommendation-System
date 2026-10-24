@@ -3,22 +3,22 @@ recommender.py
 All recommendation logic in one place:
   - Load and index item/user feature CSVs at startup
   - Build canonical title → item_id map (handles duplicate IDs)
-  - Build item sequences from watch history titles
-  - Run BERT4Rec ONNX inference
+  - Build item sequences from watch history titles (exact catalogue matches only)
+  - Run BERT4Rec / SASRec ONNX inference
   - Cold-start popularity fallback
   - A/B model variant routing
 """
 
-import os
 import hashlib
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import onnxruntime as ort
-from semantic_search import load_search_index, semantic_search
+from semantic_search import load_search_index
 from sklearn.preprocessing import StandardScaler
 
 from schemas import MovieCard
@@ -53,16 +53,10 @@ _user_feature_matrix: np.ndarray | None = None
 # user_id (string) → user_idx (integer row in _user_feature_matrix)
 _user_id_to_idx: dict[str, int] = {}
 
-# Genre index for fallback matching: genre_set → list of (item_idx, log_popularity)
-# Built at startup so unknown titles can be matched by genre overlap
-_genre_index: dict[frozenset, list[tuple[int, float]]] = {}
-# item_idx → frozenset of genres (for fast scoring)
-_item_genres: dict[int, frozenset] = {}
-# item_idx → release_year (for year proximity scoring)
-_item_years: dict[int, int] = {}
+MODEL_VARIANTS = ("bert4rec", "sasrec")
+POPULARITY_VARIANT = "popularity"   # reported for cold-start responses (no model ran)
 
-MIN_SEQ_LEN: int = 5    # sequences shorter than this get cold-start fallback
-MAX_SEQ_LEN: int = 50   # model's max_sentence_length — longer sequences are truncated
+MAX_SEQ_LEN: int = 50   # fixed input length of both exported ONNX models
 PAD_TOKEN:   int = 0
 MASK_TOKEN:  int = 1
 
@@ -85,9 +79,11 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
     """
     global _ort_session, _ort_session_sasrec, _item_id_to_idx, _idx_to_card, _title_to_item_id
     global _popularity_fallback_ids, _user_feature_matrix
-    global _user_id_to_idx, _genre_index, _item_genres, _item_years
+    global _user_id_to_idx
 
     data_dir = Path(data_dir)
+    _idx_to_card = {}
+    _ort_session_sasrec = None
 
     # ── 1. Load item features ────────────────────────────────────────────────
     logger.info("Loading item features...")
@@ -131,19 +127,6 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
         itf.sort_values("log_popularity", ascending=False)["item_id"]
         .tolist()
     )
-
-    # ── Build genre index for fallback matching ───────────────────────────────
-    # Maps each item's genre set to its (item_idx, log_popularity) for scoring
-    genre_cols = [c for c in itf.columns if c.startswith("genre_")]
-    for _, row in itf.iterrows():
-        idx = int(row["item_idx"])
-        genres = frozenset(
-            col.replace("genre_", "").replace("_", " ").lower()
-            for col in genre_cols if row[col] == 1
-        )
-        _item_genres[idx] = genres
-        _item_years[idx] = int(row["release_year"]) if pd.notna(row["release_year"]) else 2000
-    logger.info(f"  Genre index built for {len(_item_genres)} items")
 
     # ── Build semantic search index ───────────────────────────────────────────
     try:
@@ -233,142 +216,104 @@ def get_model_variant(session_id: str, redis_client=None) -> str:
     digest = hashlib.md5(session_id.encode()).hexdigest()
     return "bert4rec" if int(digest, 16) % 2 == 0 else "sasrec"
 
-def build_sequence(watch_history: list, model_variant: str = "bert4rec") -> list[int]:
+def build_sequence(watch_history: list, model_variant: str = "bert4rec") -> tuple[list[int], int]:
     """
-    Convert a list of WatchItem objects into model tokens.
+    Convert watch history into model tokens.
 
-    For each item:
-      1. Try exact title match in catalogue
-      2. If not found, find best catalogue match by genre overlap + year proximity
-      3. Convert item_idx → token using per-model offset
-      4. Truncate to MAX_SEQ_LEN
+    Only titles that exactly match a catalogue title (case-insensitive) become
+    tokens. Titles outside the catalogue — for example TMDB-only movies the user
+    opened in the UI — are counted but not converted, because substituting a
+    "similar" catalogue item would feed the model interactions that never
+    happened.
 
-    watch_history items must have: .title, .genres (list[str]), .release_year (int|None)
+    Returns (tokens, unmatched_count); tokens are truncated to MAX_SEQ_LEN.
     """
     token_offset = (
         TOKEN_OFFSET_SASREC if model_variant == "sasrec" else TOKEN_OFFSET_BERT4REC
     )
     tokens: list[int] = []
-    matched_exact = 0
-    matched_genre = 0
-    unknown = 0
+    unmatched = 0
 
     for item in watch_history:
         title = item.title if hasattr(item, 'title') else item
-        genres = item.genres if hasattr(item, 'genres') else []
-        release_year = item.release_year if hasattr(item, 'release_year') else None
-
-        # ── 1. Exact title match ──────────────────────────────────────────────
-        key = title.lower().strip()
-        item_id = _title_to_item_id.get(key)
-        if item_id is not None:
-            item_idx = _item_id_to_idx.get(item_id)
-            if item_idx is not None:
-                tokens.append(item_idx + token_offset)
-                matched_exact += 1
-                continue
-
-        # ── 2. Genre fallback ─────────────────────────────────────────────────
-        if genres and _item_genres:
-            query_genres = frozenset(g.lower().strip() for g in genres)
-            best_idx = _find_best_genre_match(query_genres, release_year)
-            if best_idx is not None:
-                tokens.append(best_idx + token_offset)
-                matched_genre += 1
-                continue
-
-        unknown += 1
-
-    logger.info(
-        f"  Sequence: {matched_exact} exact + {matched_genre} genre-matched + "
-        f"{unknown} unknown = {len(tokens)} tokens"
-    )
-    return tokens[-MAX_SEQ_LEN:]
-
-
-def _find_best_genre_match(
-    query_genres: frozenset,
-    release_year: int | None,
-    top_n: int = 1,
-) -> int | None:
-    """
-    Score every catalogue item by:
-      - Jaccard similarity with query genres (weight 0.7)
-      - Year proximity (weight 0.3, normalised to 0-1 over 20-year window)
-    Return the item_idx of the best match, or None if no genres provided.
-    """
-    if not query_genres or not _item_genres:
-        return None
-
-    best_score = -1.0
-    best_idx = None
-
-    for idx, item_genre_set in _item_genres.items():
-        if not item_genre_set:
+        item_id = _title_to_item_id.get(title.lower().strip())
+        item_idx = _item_id_to_idx.get(item_id) if item_id is not None else None
+        if item_idx is None:
+            unmatched += 1
             continue
+        tokens.append(item_idx + token_offset)
 
-        # Jaccard similarity
-        intersection = len(query_genres & item_genre_set)
-        union = len(query_genres | item_genre_set)
-        jaccard = intersection / union if union > 0 else 0.0
-
-        if jaccard == 0:
-            continue  # skip zero-genre-overlap items entirely
-
-        # Year proximity (0 = 20+ years apart, 1 = same year)
-        if release_year and idx in _item_years:
-            year_diff = abs(release_year - _item_years[idx])
-            year_score = max(0.0, 1.0 - year_diff / 20.0)
-        else:
-            year_score = 0.5  # neutral if year unknown
-
-        score = 0.7 * jaccard + 0.3 * year_score
-
-        if score > best_score:
-            best_score = score
-            best_idx = idx
-
-    return best_idx
+    logger.info(f"  Sequence: {len(tokens)} matched, {unmatched} not in catalogue")
+    return tokens[-MAX_SEQ_LEN:], unmatched
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # INFERENCE
 # ─────────────────────────────────────────────────────────────────────────────
 
+@dataclass
+class RecommendationResult:
+    cards: list[MovieCard]
+    model_variant: str      # "bert4rec", "sasrec" or "popularity"
+    cold_start: bool
+    matched_items: int      # history titles found in the catalogue
+    unmatched_items: int    # history titles not in the catalogue (ignored)
+
+
 def get_recommendations(
     session_id: str,
     watch_history: list,
     top_k: int = 10,
     redis_client=None,
-) -> tuple[list[MovieCard], str, bool]:
+    exclude_item_ids: set[str] | frozenset[str] = frozenset(),
+    min_sequence_length: int = 5,
+) -> RecommendationResult:
     """
     Main entry point called by the /recommend endpoint.
 
-    Returns:
-        (recommendations, model_variant, cold_start)
-        recommendations: list of MovieCard, ranked highest first
-        model_variant:   'bert4rec' or 'sasrec' (for A/B logging)
-        cold_start:      True if sequence was too short → popularity fallback used
+    session_id:          stable key for A/B routing (the profile id)
+    exclude_item_ids:    items that must never be returned (e.g. thumbs-down)
+    min_sequence_length: matched titles required before a model is used
     """
     model_variant = get_model_variant(session_id, redis_client=redis_client)
-    sequence = build_sequence(watch_history, model_variant)    # Cold-start gate: fewer than MIN_SEQ_LEN known items → popularity fallback
-    if len(sequence) < MIN_SEQ_LEN:
+    if model_variant == "sasrec" and _ort_session_sasrec is None:
+        # Without the SASRec model the request runs on BERT4Rec, so the sequence
+        # must use BERT4Rec's token offset and the response must say so.
+        model_variant = "bert4rec"
+    sequence, unmatched = build_sequence(watch_history, model_variant)
+    token_offset = TOKEN_OFFSET_SASREC if model_variant == "sasrec" else TOKEN_OFFSET_BERT4REC
+    watched_ids = {_idx_to_card[t - token_offset].item_id for t in sequence if (t - token_offset) in _idx_to_card}
+    excluded = set(exclude_item_ids) | watched_ids
+
+    # Cold-start gate: too few catalogue matches → popularity fallback
+    if len(sequence) < min_sequence_length:
         logger.info(
-            f"Cold start: sequence length {len(sequence)} < {MIN_SEQ_LEN}. "
+            f"Cold start: {len(sequence)} matched titles < {min_sequence_length}. "
             "Returning popularity fallback."
         )
-        cards = _popularity_fallback(top_k)
-        return cards, model_variant, True
+        return RecommendationResult(
+            cards=_popularity_fallback(top_k, excluded),
+            model_variant=POPULARITY_VARIANT,
+            cold_start=True,
+            matched_items=len(sequence),
+            unmatched_items=unmatched,
+        )
 
-    # Run ONNX inference
-    cards = _run_inference(sequence, model_variant, top_k)
-    return cards, model_variant, False
+    cards = _run_inference(sequence, model_variant, top_k, excluded)
+    return RecommendationResult(
+        cards=cards,
+        model_variant=model_variant,
+        cold_start=False,
+        matched_items=len(sequence),
+        unmatched_items=unmatched,
+    )
 
 
 def _run_inference(
     sequence: list[int],
     model_variant: str,
     top_k: int,
+    exclude_item_ids: set[str] = frozenset(),
 ) -> list[MovieCard]:
     """
     Pad the sequence, build the attention mask, get user features,
@@ -429,6 +374,10 @@ def _run_inference(
     for token in sequence:            # never recommend something already watched
         if 0 <= token < len(logits):
             logits[token] = -1e9
+    for item_id in exclude_item_ids:  # or something the user rejected
+        item_idx = _item_id_to_idx.get(item_id)
+        if item_idx is not None and 0 <= item_idx + token_offset < len(logits):
+            logits[item_idx + token_offset] = -1e9
 
     # ── 6. Decode top-K ──────────────────────────────────────────────────────
     top_tokens = np.argsort(logits)[::-1][:top_k * 3]
@@ -439,7 +388,7 @@ def _run_inference(
         if item_idx < 0:
             continue
         card = _idx_to_card.get(item_idx)
-        if card is None:
+        if card is None or card.item_id in exclude_item_ids:
             continue
         cards.append(card)
         if len(cards) == top_k:
@@ -448,13 +397,15 @@ def _run_inference(
     return cards
 
 
-def _popularity_fallback(top_k: int) -> list[MovieCard]:
+def _popularity_fallback(top_k: int, exclude_item_ids: set[str] = frozenset()) -> list[MovieCard]:
     """
-    Return the top_k most popular items by log_popularity.
-    Used when a user has fewer than MIN_SEQ_LEN known interactions.
+    Return the top_k most popular items by log_popularity, skipping excluded ones.
+    Used when a user has too few catalogue matches for the models.
     """
     cards: list[MovieCard] = []
     for item_id in _popularity_fallback_ids:
+        if item_id in exclude_item_ids:
+            continue
         item_idx = _item_id_to_idx.get(item_id)
         if item_idx is None:
             continue
@@ -474,10 +425,12 @@ def make_cache_key(session_id: str, watch_history: list, top_k: int) -> str:
     """
     Build a Redis cache key from the session and request.
     """
-    titles = sorted(
+    # Order matters: the models are sequential, so the same titles in a
+    # different order can produce different recommendations.
+    titles = [
         (item.title if hasattr(item, 'title') else item).lower().strip()
         for item in watch_history
-    )
+    ]
     payload = json.dumps({"h": titles, "k": top_k}, sort_keys=True)
     digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
     return f"rec:{session_id}:{digest}"

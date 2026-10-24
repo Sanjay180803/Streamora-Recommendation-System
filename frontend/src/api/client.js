@@ -73,8 +73,9 @@ export async function getRecommendations(watchHistory, profileId, topK = 20) {
   return res.data
 }
 
-export async function sendFeedback(profileId, movieId, signal, modelVariant) {
-  const res = await api.post('/feedback', { profile_id: profileId, movie_id: movieId, signal, model_variant: modelVariant })
+// The backend attributes feedback to the model that served the item itself
+export async function sendFeedback(profileId, movieId, signal) {
+  const res = await api.post('/feedback', { profile_id: profileId, movie_id: movieId, signal })
   return res.data
 }
 

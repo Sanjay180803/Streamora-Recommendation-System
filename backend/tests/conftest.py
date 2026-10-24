@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -35,6 +36,43 @@ def client():
     Base.metadata.create_all(engine)
     yield TestClient(main.app)
     Base.metadata.drop_all(engine)
+
+
+@pytest.fixture
+def catalogue(tmp_path, monkeypatch):
+    """Load the fixture catalogue with fake ONNX sessions for both models.
+
+    Returns {"bert4rec": FakeSession, "sasrec": FakeSession | None}.
+    Request with indirect parametrization {"sasrec": False} to omit SASRec.
+    """
+    import recommender
+    from tests.fakes import FakeSession, write_catalogue
+
+    write_catalogue(tmp_path)
+    bert_path = tmp_path / "bert4rec.onnx"
+    sasrec_path = tmp_path / "sasrec.onnx"
+    sasrec_path.touch()  # load_data only loads SASRec when the file exists
+
+    sessions = {"bert4rec": None, "sasrec": None}
+
+    def fake_session(path, **kwargs):
+        name = "sasrec" if Path(path).name.startswith("sasrec") else "bert4rec"
+        offset = recommender.TOKEN_OFFSET_SASREC if name == "sasrec" else recommender.TOKEN_OFFSET_BERT4REC
+        sessions[name] = FakeSession(path, offset)
+        return sessions[name]
+
+    monkeypatch.setattr(recommender.ort, "InferenceSession", fake_session)
+    recommender.load_data(str(tmp_path), str(bert_path), str(sasrec_path))
+    return sessions
+
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    import fakeredis
+
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(main, "_redis", redis_client)
+    return redis_client
 
 
 @pytest.fixture
