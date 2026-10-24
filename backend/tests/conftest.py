@@ -29,13 +29,29 @@ def pytest_sessionfinish(session, exitstatus):
     shutil.rmtree(_DATA_DIR, ignore_errors=True)
 
 
+def reset_database():
+    """Drop every table, including Alembic's version table left by startup tests."""
+    Base.metadata.drop_all(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+
+
 @pytest.fixture
 def client():
     # The lifespan (model loading, Redis, Kafka) is deliberately not run;
     # tests that need recommender state set it up explicitly.
+    reset_database()
     Base.metadata.create_all(engine)
     yield TestClient(main.app)
-    Base.metadata.drop_all(engine)
+    reset_database()
+
+
+@pytest.fixture
+def empty_database():
+    """For tests that run the real startup, which migrates the database itself."""
+    reset_database()
+    yield
+    reset_database()
 
 
 @pytest.fixture

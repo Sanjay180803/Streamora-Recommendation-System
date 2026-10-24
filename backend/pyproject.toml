@@ -17,3 +17,6 @@ known-first-party = [
     "auth", "config", "database", "main", "recommender", "schemas",
     "security", "semantic_search", "tmdb", "watch_party", "tests",
 ]
+
+[tool.coverage.run]
+omit = ["tests/*", ".venv/*"]

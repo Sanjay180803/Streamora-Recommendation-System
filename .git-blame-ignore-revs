@@ -1,0 +1,4 @@
+# Mechanical formatting commits. Use with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# style: apply ruff format to the backend
+5212fa269b4d54e97b1231f2d84da3296a987a26
