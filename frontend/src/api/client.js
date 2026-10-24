@@ -1,17 +1,13 @@
 import axios from 'axios'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
-const TMDB_TOKEN = import.meta.env.VITE_TMDB_TOKEN || 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3ZDM4ZGZkN2MwN2ZhZjQzOWNkN2M5NGVmOGRkMzMzNiIsIm5iZiI6MTc3NTExOTIxOC43NTEwMDAyLCJzdWIiOiI2OWNlMmI3MjA2MTI1YWNhNWZkMjhkNzUiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.xiwle-ORjQsdoW5wGqJYUtIuQLByHo7le0XjHtLfNYQ'
 
 // ── FastAPI client ─────────────────────────────────────────────────────────
 const api = axios.create({ baseURL: BASE_URL, timeout: 15000 })
 
 // ── TMDB client ────────────────────────────────────────────────────────────
-const tmdb = axios.create({
-  baseURL: 'https://api.themoviedb.org/3',
-  timeout: 10000,
-  headers: { Authorization: `Bearer ${TMDB_TOKEN}`, 'Content-Type': 'application/json' },
-})
+// Requests go through the backend proxy, which holds the TMDB token.
+const tmdb = axios.create({ baseURL: `${BASE_URL}/tmdb`, timeout: 10000 })
 
 // ── FastAPI calls ──────────────────────────────────────────────────────────
 
@@ -71,6 +67,20 @@ export async function getTrailerKey(tmdbId, mediaType = 'movie') {
     const trailer = videos.find(v => v.type === 'Trailer' && v.site === 'YouTube') || videos.find(v => v.site === 'YouTube')
     return trailer ? trailer.key : null
   } catch { return null }
+}
+
+export async function searchTMDB(mediaType, query) {
+  try {
+    const res = await tmdb.get(`/search/${mediaType}`, { params: { query, language: 'en-US', page: 1 } })
+    return res.data.results || []
+  } catch { return [] }
+}
+
+// Parses the item ids produced by movieToCard / tvToMovie ("tmdb_123", "tmdb_tv_123")
+export function parseTMDBItemId(itemId) {
+  const match = /^tmdb_(tv_)?(\d+)$/.exec(itemId || '')
+  if (!match) return null
+  return { mediaType: match[1] ? 'tv' : 'movie', tmdbId: match[2] }
 }
 
 // ── TMDB Movies ────────────────────────────────────────────────────────────

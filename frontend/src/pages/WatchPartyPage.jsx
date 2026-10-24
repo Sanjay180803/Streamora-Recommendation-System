@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { getTrailerKey, parseTMDBItemId } from '../api/client'
 import './WatchPartyPage.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
@@ -16,31 +17,13 @@ export default function WatchPartyPage({ roomId, movieId, movieTitle, onLeave })
   const wsRef    = useRef(null)
   const chatRef  = useRef(null)
 
-  // Trailer URL — use YouTube embed
-  const trailerUrl = movieId?.startsWith('tmdb_')
-    ? null
-    : null
   const [trailerKey, setTrailerKey] = useState(null)
 
-  // Fetch trailer
+  // Fetch trailer through the backend TMDB proxy
   useEffect(() => {
-    const fetchTrailer = async () => {
-      if (!movieId) return
-      const tmdbId = movieId.replace('tmdb_', '').replace('tmdb_tv_', '')
-      try {
-        const mediaType = movieId.includes('tv') ? 'tv' : 'movie'
-        const res = await fetch(
-          `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/videos?language=en-US`,
-          { headers: { Authorization: `Bearer ${import.meta.env.VITE_TMDB_TOKEN || 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI3ZDM4ZGZkN2MwN2ZhZjQzOWNkN2M5NGVmOGRkMzMzNiIsIm5iZiI6MTc3NTExOTIxOC43NTEwMDAyLCJzdWIiOiI2OWNlMmI3MjA2MTI1YWNhNWZkMjhkNzUiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.xiwle-ORjQsdoW5wGqJYUtIuQLByHo7le0XjHtLfNYQ'}` }
-        }
-        )
-        const data = await res.json()
-        const trailer = data.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube')
-          || data.results?.find(v => v.site === 'YouTube')
-        if (trailer) setTrailerKey(trailer.key)
-      } catch (e) { console.error(e) }
-    }
-    fetchTrailer()
+    const parsed = parseTMDBItemId(movieId)
+    if (!parsed) return
+    getTrailerKey(parsed.tmdbId, parsed.mediaType).then(key => { if (key) setTrailerKey(key) })
   }, [movieId])
 
   // Connect WebSocket

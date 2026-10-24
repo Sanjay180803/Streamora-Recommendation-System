@@ -31,6 +31,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
 from auth import router as auth_router
+from tmdb import router as tmdb_router
 
 import recommender
 from semantic_search import semantic_search
@@ -154,6 +155,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(auth_router)
+app.include_router(tmdb_router)
 
 # CORS — allow the React frontend (and localhost dev) to call this API
 app.add_middleware(

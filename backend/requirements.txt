@@ -13,3 +13,4 @@ python-jose[cryptography]
 sqlalchemy
 aiosqlite
 websockets
+httpx==0.28.1

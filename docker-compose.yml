@@ -44,6 +44,7 @@ services:
       - MODEL_PATH=/app/data/bert4rec_v3.onnx
       - SASREC_MODEL_PATH=/app/data/sasrec_v3.onnx
       - MIN_SEQUENCE_LENGTH=1
+      - TMDB_TOKEN=${TMDB_TOKEN:-}
     restart: unless-stopped
 
   frontend:
