@@ -47,16 +47,17 @@ function scoreResult(result, query) {
 
 export default function SearchBar({ onSearch, onClose }) {
   const [query, setQuery]     = useState('')
-  const [results, setResults] = useState([])
+  const [fetchedResults, setFetchedResults] = useState([])
   const [loading, setLoading] = useState(false)
   const inputRef    = useRef(null)
+  const results     = query && query.length >= 2 ? fetchedResults : []
   const debounceRef = useRef(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!query || query.length < 2) { setResults([]); return }
+    if (!query || query.length < 2) return
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true)
@@ -77,7 +78,7 @@ export default function SearchBar({ onSearch, onClose }) {
       // Issue 1: Sort by relevance score (highest first)
       merged.sort((a, b) => scoreResult(b, query) - scoreResult(a, query))
 
-      setResults(merged.slice(0, 10))
+      setFetchedResults(merged.slice(0, 10))
       setLoading(false)
     }, 300)
 

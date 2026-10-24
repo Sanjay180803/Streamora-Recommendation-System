@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { getRecommendations, getTMDBPopular, getTMDBNowPlaying, getTMDBTopRatedMovies, movieToCard, movieToData } from '../api/client'
+import { getRecommendations, getTMDBPopular, getTMDBNowPlaying, getTMDBTopRatedMovies, movieToCard } from '../api/client'
 import MovieRow from '../components/MovieRow'
 import MovieModal from '../components/MovieModal'
 import './HomePage.css'

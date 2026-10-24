@@ -73,7 +73,7 @@ export function AuthProvider({ children }) {
         method: 'POST',
         body: { profile_id: p.id, history },
       })
-    } catch {}
+    } catch { /* best effort: the local copy stays in localStorage */ }
   }, [])
 
   const saveCWToBackend = useCallback(async (items) => {
@@ -85,7 +85,7 @@ export function AuthProvider({ children }) {
         method: 'POST',
         body: { profile_id: p.id, items },
       })
-    } catch {}
+    } catch { /* best effort: the local copy stays in localStorage */ }
   }, [])
 
   const login = useCallback((userData) => {
@@ -170,4 +170,5 @@ export function AuthProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- the hook belongs with its context
 export const useAuth = () => useContext(AuthContext)

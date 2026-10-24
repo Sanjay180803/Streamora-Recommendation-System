@@ -6,7 +6,7 @@ Every protected route derives the caller's identity from the bearer token;
 no route trusts an email address supplied in the URL or request body.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -37,7 +37,7 @@ def hash_password(password: str) -> str:
 
 
 def create_access_token(email: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": email,
         "iat": now,

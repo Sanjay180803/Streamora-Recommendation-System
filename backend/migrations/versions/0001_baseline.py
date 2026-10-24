@@ -7,8 +7,8 @@ Create Date: 2026-10-24
 Existing databases created before migrations were introduced match this
 revision and are stamped (not re-created) by database.init_db().
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0001_baseline"
 down_revision = None

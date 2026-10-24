@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { getTrailerKey, getTMDBData, sendFeedback } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import WatchTogetherModal from './WatchTogetherModal'

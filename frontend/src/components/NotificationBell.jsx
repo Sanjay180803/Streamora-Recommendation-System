@@ -17,7 +17,7 @@ export default function NotificationBell({ onAccept }) {
         if (!res.ok) return
         const data = await res.json()
         setInvites(data.invites || [])
-      } catch {}
+      } catch { /* offline: retry on the next poll */ }
     }
     poll()
     const interval = setInterval(poll, 8000)

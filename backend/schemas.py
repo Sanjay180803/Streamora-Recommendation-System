@@ -1,5 +1,6 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
 
 # ─────────────────────────────────────────────────────────────────────────────
 # REQUEST MODELS  (what the frontend sends to FastAPI)
@@ -9,7 +10,7 @@ class WatchItem(BaseModel):
     """One item in the user's watch history."""
     title: str
     genres: list[str] = Field(default_factory=list)   # e.g. ["Action", "Drama"]
-    release_year: Optional[int] = None
+    release_year: int | None = None
 
 
 class RecommendRequest(BaseModel):
@@ -52,7 +53,7 @@ class MovieCard(BaseModel):
     item_id: str
     item_idx: int
     title: str
-    release_year: Optional[int]
+    release_year: int | None
     genres: list[str]            # e.g. ["Action", "Drama"]
     log_popularity: float        # used by frontend to show a popularity indicator if needed
 

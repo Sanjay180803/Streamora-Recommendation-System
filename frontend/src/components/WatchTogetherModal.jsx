@@ -45,7 +45,7 @@ export default function WatchTogetherModal({ movie, onClose, onPartyStart }) {
       setStatus('sent')
       setMessage(`If ${email.trim()} has a STREAMORA account, they'll get your invite. You can start now — they'll join when they accept.`)
 
-    } catch (e) {
+    } catch {
       setStatus('error')
       setMessage('Could not connect to server. Check your connection.')
     }

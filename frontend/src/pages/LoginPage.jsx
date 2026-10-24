@@ -47,7 +47,7 @@ export default function LoginPage() {
         login({ email: data.email, name: data.name, token: data.access_token, profiles: data.profiles })
         navigate('/profiles')
       }
-    } catch (e) {
+    } catch {
       setError('Cannot connect to server. Please try again.')
     }
     setLoading(false)

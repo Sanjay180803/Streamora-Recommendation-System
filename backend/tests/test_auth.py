@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
@@ -16,7 +16,7 @@ def get_user(email):
 
 
 def token_for(email, *, secret=None, expires_in=timedelta(minutes=5)):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {"sub": email, "iat": now, "exp": now + expires_in}
     return jwt.encode(payload, secret or settings.jwt_secret, algorithm=JWT_ALGORITHM)
 

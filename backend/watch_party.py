@@ -214,7 +214,7 @@ async def _authenticate(ws: WebSocket, room_id: str) -> User | None:
         raw = await asyncio.wait_for(ws.receive_text(), timeout=AUTH_TIMEOUT_SEC)
         message = json.loads(raw)
         token = message.get("token") if message.get("type") == "auth" else None
-    except (asyncio.TimeoutError, ValueError, AttributeError):
+    except (TimeoutError, ValueError, AttributeError):
         token = None
 
     if not isinstance(token, str):

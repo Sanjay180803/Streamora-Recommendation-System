@@ -16,7 +16,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import redis as redis_lib
 from fastapi import Depends, FastAPI, HTTPException
@@ -257,7 +257,7 @@ def recommend(
         )
     except Exception as e:
         logger.error(f"Inference error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Inference failed. See server logs.")
+        raise HTTPException(status_code=500, detail="Inference failed. See server logs.") from e
 
     response = RecommendResponse(
         recommendations=result.cards,
@@ -337,7 +337,7 @@ def feedback(
         "movie_id":      req.movie_id,
         "signal":        req.signal,
         "model_variant": variant,
-        "timestamp":     datetime.now(timezone.utc).isoformat(),
+        "timestamp":     datetime.now(UTC).isoformat(),
     })
     return FeedbackResponse(status="ok")
 
