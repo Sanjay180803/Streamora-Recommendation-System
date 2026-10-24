@@ -14,6 +14,7 @@ Tables are altered parents-first. On SQLite, batch mode rebuilds a table to
 change its constraints; rebuilding a table that other tables already reference
 with ON DELETE CASCADE would delete the referencing rows.
 """
+
 from alembic import op
 
 revision = "0002_relational_constraints"

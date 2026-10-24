@@ -36,8 +36,8 @@ class Settings:
     data_dir: str
     bert4rec_model_path: str
     sasrec_model_path: str
-    redis_url: str            # empty string disables Redis
-    kafka_bootstrap: str      # empty string disables Kafka
+    redis_url: str  # empty string disables Redis
+    kafka_bootstrap: str  # empty string disables Kafka
     min_sequence_length: int  # matched titles needed before using a model
     recommendation_cache_ttl_sec: int
     dislike_suppression_days: int
@@ -46,15 +46,9 @@ class Settings:
 def load_settings() -> Settings:
     jwt_secret = os.getenv("JWT_SECRET", "")
     if len(jwt_secret) < MIN_JWT_SECRET_LENGTH:
-        raise ConfigError(
-            f"JWT_SECRET must be set to at least {MIN_JWT_SECRET_LENGTH} characters"
-        )
+        raise ConfigError(f"JWT_SECRET must be set to at least {MIN_JWT_SECRET_LENGTH} characters")
 
-    origins = [
-        o.strip()
-        for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
-        if o.strip()
-    ]
+    origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
     if "*" in origins:
         raise ConfigError("CORS_ORIGINS must list explicit origins, not '*'")
 

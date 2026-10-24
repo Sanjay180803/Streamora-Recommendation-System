@@ -31,6 +31,7 @@ MAX_HISTORY_ITEMS = 100
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
 
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 def _normalize_email(value: str) -> str:
     value = value.strip().lower()
@@ -66,12 +67,13 @@ class LoginRequest(BaseModel):
 class CreateProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=30)
     color: str = Field(default="#e50914", pattern=COLOR_PATTERN)
-    icon: str = Field(default="\U0001F3AC", max_length=8)
+    icon: str = Field(default="\U0001f3ac", max_length=8)
 
 
 class SaveHistoryRequest(BaseModel):
     profile_id: str
     history: list[Any] = Field(max_length=MAX_HISTORY_ITEMS)
+
 
 def _profile_dict(profile: Profile) -> dict:
     return {"id": profile.id, "name": profile.name, "color": profile.color, "icon": profile.icon}
@@ -166,12 +168,16 @@ def save_history(
     db: Session = Depends(get_db),
 ):
     get_owned_profile(req.profile_id, user, db)
-    record = db.query(WatchHistory).filter(
-        WatchHistory.user_email == user.email,
-        WatchHistory.profile_id == req.profile_id,
-    ).first()
+    record = (
+        db.query(WatchHistory)
+        .filter(
+            WatchHistory.user_email == user.email,
+            WatchHistory.profile_id == req.profile_id,
+        )
+        .first()
+    )
     if record:
-        record.history    = json.dumps(req.history)
+        record.history = json.dumps(req.history)
         record.updated_at = datetime.utcnow()
     else:
         record = WatchHistory(
@@ -184,6 +190,7 @@ def save_history(
     db.commit()
     return {"status": "ok"}
 
+
 @router.get("/history/{profile_id}")
 def get_history(
     profile_id: str,
@@ -191,12 +198,17 @@ def get_history(
     db: Session = Depends(get_db),
 ):
     get_owned_profile(profile_id, user, db)
-    record = db.query(WatchHistory).filter(
-        WatchHistory.user_email == user.email,
-        WatchHistory.profile_id == profile_id,
-    ).first()
+    record = (
+        db.query(WatchHistory)
+        .filter(
+            WatchHistory.user_email == user.email,
+            WatchHistory.profile_id == profile_id,
+        )
+        .first()
+    )
     history = json.loads(record.history) if record else []
     return {"history": history}
+
 
 # ── Continue Watching & Watch Again endpoints ─────────────────────────────────
 class SaveListRequest(BaseModel):
@@ -206,12 +218,16 @@ class SaveListRequest(BaseModel):
 
 def _save_list(model, req: SaveListRequest, user: User, db: Session) -> dict:
     get_owned_profile(req.profile_id, user, db)
-    record = db.query(model).filter(
-        model.user_email == user.email,
-        model.profile_id == req.profile_id,
-    ).first()
+    record = (
+        db.query(model)
+        .filter(
+            model.user_email == user.email,
+            model.profile_id == req.profile_id,
+        )
+        .first()
+    )
     if record:
-        record.items      = json.dumps(req.items)
+        record.items = json.dumps(req.items)
         record.updated_at = datetime.utcnow()
     else:
         record = model(
@@ -227,10 +243,14 @@ def _save_list(model, req: SaveListRequest, user: User, db: Session) -> dict:
 
 def _get_list(model, profile_id: str, user: User, db: Session) -> dict:
     get_owned_profile(profile_id, user, db)
-    record = db.query(model).filter(
-        model.user_email == user.email,
-        model.profile_id == profile_id,
-    ).first()
+    record = (
+        db.query(model)
+        .filter(
+            model.user_email == user.email,
+            model.profile_id == profile_id,
+        )
+        .first()
+    )
     return {"items": json.loads(record.items) if record else []}
 
 
@@ -242,6 +262,7 @@ def save_continue_watching(
 ):
     return _save_list(ContinueWatching, req, user, db)
 
+
 @router.get("/continue-watching/{profile_id}")
 def get_continue_watching(
     profile_id: str,
@@ -249,6 +270,7 @@ def get_continue_watching(
     db: Session = Depends(get_db),
 ):
     return _get_list(ContinueWatching, profile_id, user, db)
+
 
 @router.post("/watch-again/save")
 def save_watch_again(
@@ -258,6 +280,7 @@ def save_watch_again(
 ):
     return _save_list(WatchAgain, req, user, db)
 
+
 @router.get("/watch-again/{profile_id}")
 def get_watch_again(
     profile_id: str,
@@ -266,13 +289,16 @@ def get_watch_again(
 ):
     return _get_list(WatchAgain, profile_id, user, db)
 
+
 # ── Profile delete and rename ─────────────────────────────────────────────────
 class DeleteProfileRequest(BaseModel):
     profile_id: str
 
+
 class RenameProfileRequest(BaseModel):
     profile_id: str
     new_name: str = Field(min_length=1, max_length=30)
+
 
 @router.post("/profiles/delete")
 def delete_profile(
@@ -288,6 +314,7 @@ def delete_profile(
     db.commit()
     return {"status": "ok"}
 
+
 @router.post("/profiles/rename")
 def rename_profile(
     req: RenameProfileRequest,
@@ -299,11 +326,15 @@ def rename_profile(
     if not new_name:
         raise HTTPException(status_code=400, detail="Profile name is required")
     # Check duplicate name
-    existing = db.query(Profile).filter(
-        Profile.user_email == user.email,
-        Profile.name == new_name,
-        Profile.id != profile.id,
-    ).first()
+    existing = (
+        db.query(Profile)
+        .filter(
+            Profile.user_email == user.email,
+            Profile.name == new_name,
+            Profile.id != profile.id,
+        )
+        .first()
+    )
     if existing:
         raise HTTPException(status_code=400, detail="A profile with this name already exists")
     profile.name = new_name

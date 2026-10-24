@@ -26,7 +26,9 @@ def accepted_room(client, alice, bob):
     """A room created by Alice that Bob has joined."""
     room_id = invite(client, alice["headers"], "bob@example.com").json()["room_id"]
     invite_id = pending(client, bob["headers"])[0]["id"]
-    client.post("/invite/respond", json={"invite_id": invite_id, "action": "accepted"}, headers=bob["headers"])
+    client.post(
+        "/invite/respond", json={"invite_id": invite_id, "action": "accepted"}, headers=bob["headers"]
+    )
     return room_id
 
 
@@ -42,8 +44,11 @@ def connect(client, room_id, headers=None, auth_message=None):
 
 # ── Invitations ───────────────────────────────────────────────────────────────
 
+
 def test_invite_uses_sender_identity_from_token(client, alice, bob):
-    response = invite(client, alice["headers"], "BOB@example.com", from_email="mallory@example.com", from_name="Mallory")
+    response = invite(
+        client, alice["headers"], "BOB@example.com", from_email="mallory@example.com", from_name="Mallory"
+    )
 
     assert response.status_code == 200
     [received] = pending(client, bob["headers"])
@@ -93,7 +98,9 @@ def test_only_the_invitee_can_respond(client, alice, bob, register):
     carol = register("carol@example.com", "Carol")
 
     for headers in (alice["headers"], carol):
-        response = client.post("/invite/respond", json={"invite_id": invite_id, "action": "accepted"}, headers=headers)
+        response = client.post(
+            "/invite/respond", json={"invite_id": invite_id, "action": "accepted"}, headers=headers
+        )
         assert response.status_code == 404
 
     assert len(pending(client, bob["headers"])) == 1
@@ -104,7 +111,9 @@ def test_invalid_response_action_is_rejected(client, alice, bob, action):
     invite(client, alice["headers"], "bob@example.com")
     invite_id = pending(client, bob["headers"])[0]["id"]
 
-    response = client.post("/invite/respond", json={"invite_id": invite_id, "action": action}, headers=bob["headers"])
+    response = client.post(
+        "/invite/respond", json={"invite_id": invite_id, "action": action}, headers=bob["headers"]
+    )
     assert response.status_code == 422
 
 
@@ -112,8 +121,12 @@ def test_invite_can_only_be_answered_once(client, alice, bob):
     invite(client, alice["headers"], "bob@example.com")
     invite_id = pending(client, bob["headers"])[0]["id"]
 
-    first = client.post("/invite/respond", json={"invite_id": invite_id, "action": "declined"}, headers=bob["headers"])
-    second = client.post("/invite/respond", json={"invite_id": invite_id, "action": "accepted"}, headers=bob["headers"])
+    first = client.post(
+        "/invite/respond", json={"invite_id": invite_id, "action": "declined"}, headers=bob["headers"]
+    )
+    second = client.post(
+        "/invite/respond", json={"invite_id": invite_id, "action": "accepted"}, headers=bob["headers"]
+    )
 
     assert first.status_code == 200
     assert first.json()["room_id"] is None
@@ -128,6 +141,7 @@ def test_invite_endpoints_require_auth(client):
 
 
 # ── Room membership ───────────────────────────────────────────────────────────
+
 
 def test_room_details_visible_to_participants_only(client, alice, bob, register, accepted_room):
     carol = register("carol@example.com", "Carol")
@@ -145,12 +159,15 @@ def test_invitee_is_not_a_participant_until_accepting(client, alice, bob):
 def test_declining_does_not_grant_access(client, alice, bob):
     room_id = invite(client, alice["headers"], "bob@example.com").json()["room_id"]
     invite_id = pending(client, bob["headers"])[0]["id"]
-    client.post("/invite/respond", json={"invite_id": invite_id, "action": "declined"}, headers=bob["headers"])
+    client.post(
+        "/invite/respond", json={"invite_id": invite_id, "action": "declined"}, headers=bob["headers"]
+    )
 
     assert client.get(f"/room/{room_id}", headers=bob["headers"]).status_code == 404
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize(
     "auth_message",
@@ -226,7 +243,9 @@ def test_participants_can_chat_with_server_assigned_sender(client, alice, bob, a
         json.dumps([1, 2, 3]),
     ],
 )
-def test_invalid_chat_messages_are_rejected_without_dropping_the_socket(client, alice, accepted_room, message):
+def test_invalid_chat_messages_are_rejected_without_dropping_the_socket(
+    client, alice, accepted_room, message
+):
     ws, session = connect(client, accepted_room, alice["headers"])
     session.receive_json()  # join notice
 

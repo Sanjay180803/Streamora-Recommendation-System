@@ -74,11 +74,7 @@ def get_current_user(
 def get_owned_profile(profile_id: str, user: User, db: Session) -> Profile:
     """Return the profile if it belongs to the user; otherwise 404 (not 403),
     so callers cannot probe which profile ids exist on other accounts."""
-    profile = (
-        db.query(Profile)
-        .filter(Profile.id == profile_id, Profile.user_email == user.email)
-        .first()
-    )
+    profile = db.query(Profile).filter(Profile.id == profile_id, Profile.user_email == user.email).first()
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile

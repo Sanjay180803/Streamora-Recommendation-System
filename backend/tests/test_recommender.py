@@ -36,6 +36,7 @@ def session_routed_to(variant):
 
 # ── Loading ───────────────────────────────────────────────────────────────────
 
+
 def test_catalogue_loads(catalogue):
     assert recommender.is_loaded()
     assert recommender.item_count() == N_ITEMS + 1
@@ -72,6 +73,7 @@ def test_sasrec_model_is_optional(tmp_path, monkeypatch):
 
 
 # ── Title mapping ─────────────────────────────────────────────────────────────
+
 
 def test_only_exact_catalogue_titles_become_tokens(catalogue):
     items = [
@@ -110,6 +112,7 @@ def test_sequence_keeps_the_most_recent_items(catalogue, monkeypatch):
 
 # ── Cold start ────────────────────────────────────────────────────────────────
 
+
 def test_cold_start_returns_popular_unwatched_items(catalogue):
     result = recommend(history(0), top_k=3, min_len=3)
 
@@ -139,6 +142,7 @@ def test_threshold_counts_matched_titles_only(catalogue):
 
 
 # ── Inference ─────────────────────────────────────────────────────────────────
+
 
 def test_inference_input_is_left_padded_with_mask_and_neutral_user_features(catalogue):
     sid = session_routed_to("bert4rec")
@@ -191,6 +195,7 @@ def test_top_k_is_respected(catalogue):
 
 # ── Model routing ─────────────────────────────────────────────────────────────
 
+
 def test_routing_without_feedback_is_a_stable_hash_split():
     variants = {recommender.get_model_variant(f"profile-{i}") for i in range(50)}
     assert variants == {"bert4rec", "sasrec"}
@@ -215,6 +220,7 @@ def test_thompson_sampling_favours_the_winning_model():
 
 
 # ── Cache key ─────────────────────────────────────────────────────────────────
+
 
 def test_cache_key_depends_on_profile_order_and_k():
     base = recommender.make_cache_key("p1", history(1, 2), 10)

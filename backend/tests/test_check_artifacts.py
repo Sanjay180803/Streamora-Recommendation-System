@@ -13,10 +13,16 @@ SPEC.loader.exec_module(check_artifacts)
 @pytest.fixture
 def manifest(tmp_path):
     path = tmp_path / "artifacts.json"
-    path.write_text(json.dumps({"files": [
-        {"path": "model.onnx", "required": True, "purpose": "", "sha256": None},
-        {"path": "optional.onnx", "required": False, "purpose": "", "sha256": None},
-    ]}))
+    path.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {"path": "model.onnx", "required": True, "purpose": "", "sha256": None},
+                    {"path": "optional.onnx", "required": False, "purpose": "", "sha256": None},
+                ]
+            }
+        )
+    )
     return path
 
 
@@ -29,6 +35,7 @@ def test_repository_manifest_lists_the_files_the_backend_loads():
     required = {Path(e["path"]).name for e in entries if e["required"]}
 
     import recommender
+
     assert set(recommender.REQUIRED_DATA_FILES) <= required
     assert "bert4rec_v3.onnx" in required
 

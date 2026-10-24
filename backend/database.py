@@ -27,12 +27,13 @@ DATABASE_URL = os.getenv(
 )
 
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine       = create_engine(DATABASE_URL, connect_args=_connect_args)
+engine = create_engine(DATABASE_URL, connect_args=_connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base         = declarative_base()
+Base = declarative_base()
 
 
 if engine.dialect.name == "sqlite":
+
     @event.listens_for(engine, "connect")
     def _enable_sqlite_foreign_keys(dbapi_connection, _record):
         # SQLite ignores foreign keys (and ON DELETE CASCADE) unless enabled per connection
@@ -51,72 +52,72 @@ def _profile_fk():
 
 class User(Base):
     __tablename__ = "users"
-    email         = Column(String, primary_key=True, index=True)
-    name          = Column(String, nullable=False)
+    email = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
-    created_at    = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Profile(Base):
     __tablename__ = "profiles"
-    id         = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)
     user_email = Column(String, _user_fk(), nullable=False, index=True)
-    name       = Column(String, nullable=False)
-    color      = Column(String, default="#e50914")
-    icon       = Column(String, default="🎬")
+    name = Column(String, nullable=False)
+    color = Column(String, default="#e50914")
+    icon = Column(String, default="🎬")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class WatchHistory(Base):
     __tablename__ = "watch_history"
     __table_args__ = (UniqueConstraint("profile_id", name="uq_watch_history_profile"),)
-    id         = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)
     user_email = Column(String, _user_fk(), nullable=False, index=True)
     profile_id = Column(String, _profile_fk(), nullable=False, index=True)
-    history    = Column(Text, default="[]")
+    history = Column(Text, default="[]")
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class ContinueWatching(Base):
     __tablename__ = "continue_watching"
     __table_args__ = (UniqueConstraint("profile_id", name="uq_continue_watching_profile"),)
-    id         = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)
     user_email = Column(String, _user_fk(), nullable=False, index=True)
     profile_id = Column(String, _profile_fk(), nullable=False, index=True)
-    items      = Column(Text, default="[]")  # JSON array of {movie, progress}
+    items = Column(Text, default="[]")  # JSON array of {movie, progress}
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class WatchAgain(Base):
     __tablename__ = "watch_again"
     __table_args__ = (UniqueConstraint("profile_id", name="uq_watch_again_profile"),)
-    id         = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)
     user_email = Column(String, _user_fk(), nullable=False, index=True)
     profile_id = Column(String, _profile_fk(), nullable=False, index=True)
-    items      = Column(Text, default="[]")  # JSON array of movies
+    items = Column(Text, default="[]")  # JSON array of movies
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class WatchRoom(Base):
     __tablename__ = "watch_rooms"
-    room_id     = Column(String, primary_key=True)
-    movie_id    = Column(String, nullable=False)
+    room_id = Column(String, primary_key=True)
+    movie_id = Column(String, nullable=False)
     movie_title = Column(String, nullable=False)
-    created_by  = Column(String, _user_fk(), nullable=False)
-    created_at  = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String, _user_fk(), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class WatchInvite(Base):
     __tablename__ = "watch_invites"
-    id          = Column(String, primary_key=True)
-    from_email  = Column(String, _user_fk(), nullable=False)
-    from_name   = Column(String, nullable=False)
-    to_email    = Column(String, _user_fk(), nullable=False)
+    id = Column(String, primary_key=True)
+    from_email = Column(String, _user_fk(), nullable=False)
+    from_name = Column(String, nullable=False)
+    to_email = Column(String, _user_fk(), nullable=False)
     movie_title = Column(String, nullable=False)
-    movie_id    = Column(String, nullable=False)
-    room_id     = Column(String, ForeignKey("watch_rooms.room_id", ondelete="CASCADE"), nullable=False)
-    status      = Column(String, default="pending")
-    created_at  = Column(DateTime, default=datetime.utcnow)
+    movie_id = Column(String, nullable=False)
+    room_id = Column(String, ForeignKey("watch_rooms.room_id", ondelete="CASCADE"), nullable=False)
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 # ── Migrations ────────────────────────────────────────────────────────────────
@@ -131,8 +132,15 @@ BASELINE_SCHEMA = {
     "continue_watching": {"id", "user_email", "profile_id", "items", "updated_at"},
     "watch_again": {"id", "user_email", "profile_id", "items", "updated_at"},
     "watch_invites": {
-        "id", "from_email", "from_name", "to_email", "movie_title",
-        "movie_id", "room_id", "status", "created_at",
+        "id",
+        "from_email",
+        "from_name",
+        "to_email",
+        "movie_title",
+        "movie_id",
+        "room_id",
+        "status",
+        "created_at",
     },
     "watch_rooms": {"room_id", "movie_id", "movie_title", "created_by", "created_at"},
 }

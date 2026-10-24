@@ -91,6 +91,7 @@ def _init_kafka():
         return
     try:
         from kafka import KafkaProducer
+
         _kafka_producer = KafkaProducer(
             bootstrap_servers=settings.kafka_bootstrap,
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
@@ -117,6 +118,7 @@ def _publish_feedback(event: dict):
 # LIFESPAN  (runs at startup and shutdown)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── STARTUP ──────────────────────────────────────────────────────────────
@@ -126,9 +128,7 @@ async def lifespan(app: FastAPI):
     init_db()
 
     # Load data and ONNX model into memory
-    recommender.load_data(
-        settings.data_dir, settings.bert4rec_model_path, settings.sasrec_model_path
-    )
+    recommender.load_data(settings.data_dir, settings.bert4rec_model_path, settings.sasrec_model_path)
     logger.info(f"Items in catalogue: {recommender.item_count()}")
 
     # Connect to Redis (optional — caching, dislike suppression and the bandit need it)
@@ -180,6 +180,7 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────────────────────
 # ENDPOINTS
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.get("/health", response_model=HealthResponse)
 def health():
@@ -332,13 +333,15 @@ def feedback(
         except Exception as e:
             logger.warning(f"Redis feedback error: {e}")
 
-    _publish_feedback({
-        "profile_id":    req.profile_id,
-        "movie_id":      req.movie_id,
-        "signal":        req.signal,
-        "model_variant": variant,
-        "timestamp":     datetime.now(UTC).isoformat(),
-    })
+    _publish_feedback(
+        {
+            "profile_id": req.profile_id,
+            "movie_id": req.movie_id,
+            "signal": req.signal,
+            "model_variant": variant,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )
     return FeedbackResponse(status="ok")
 
 
@@ -371,14 +374,16 @@ def search(q: str, top_k: int = 10, user: User = Depends(get_current_user)):
     for r in results:
         card = recommender._idx_to_card.get(r["item_idx"])
         if card:
-            cards.append({
-                "item_id":     card.item_id,
-                "item_idx":    card.item_idx,
-                "title":       card.title,
-                "release_year": card.release_year,
-                "genres":      card.genres,
-                "log_popularity": card.log_popularity,
-                "similarity_score": round(r["score"], 3),
-            })
+            cards.append(
+                {
+                    "item_id": card.item_id,
+                    "item_idx": card.item_idx,
+                    "title": card.title,
+                    "release_year": card.release_year,
+                    "genres": card.genres,
+                    "log_popularity": card.log_popularity,
+                    "similarity_score": round(r["score"], 3),
+                }
+            )
 
     return {"results": cards, "query": q}

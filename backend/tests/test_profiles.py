@@ -7,6 +7,7 @@ HISTORY = [{"title": "Inception", "genres": ["Sci-Fi"], "release_year": 2010}]
 
 # ── Profile management ────────────────────────────────────────────────────────
 
+
 def test_profiles_list_only_the_callers_profiles(client, alice, bob):
     alice_ids = [p["id"] for p in client.get("/profiles", headers=alice["headers"]).json()["profiles"]]
     bob_ids = [p["id"] for p in client.get("/profiles", headers=bob["headers"]).json()["profiles"]]
@@ -74,6 +75,7 @@ def test_profile_delete_removes_all_profile_data(client, alice):
 
 # ── Per-profile lists ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "save_path, get_path, field",
     [
@@ -104,6 +106,7 @@ def test_history_size_is_capped(client, alice):
 
 # ── Cross-account isolation ───────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "method, path, body",
     [
@@ -116,7 +119,11 @@ def test_history_size_is_capped(client, alice):
         ("post", "/profiles/rename", {"profile_id": "{pid}", "new_name": "Hijacked"}),
         ("post", "/profiles/delete", {"profile_id": "{pid}"}),
         ("post", "/recommend", {"profile_id": "{pid}", "watch_history": [{"title": "X"}]}),
-        ("post", "/feedback", {"profile_id": "{pid}", "movie_id": "m", "signal": -1, "model_variant": "bert4rec"}),
+        (
+            "post",
+            "/feedback",
+            {"profile_id": "{pid}", "movie_id": "m", "signal": -1, "model_variant": "bert4rec"},
+        ),
     ],
 )
 def test_other_accounts_profiles_are_not_found(client, alice, bob, method, path, body):

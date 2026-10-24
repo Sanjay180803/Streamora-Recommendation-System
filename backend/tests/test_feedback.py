@@ -36,6 +36,7 @@ def bandit(redis, variant, outcome):
 
 # ── /recommend ────────────────────────────────────────────────────────────────
 
+
 def test_recommend_reports_mapping_coverage(client, catalogue, alice):
     history = WARM_HISTORY + [{"title": "TMDB-only film"}]
     body = recommend(client, alice, watch_history=history)
@@ -81,6 +82,7 @@ def test_cold_start_items_are_not_attributed(client, catalogue, alice, fake_redi
 
 # ── /feedback: suppression ────────────────────────────────────────────────────
 
+
 def test_thumbs_down_suppresses_item_in_future_recommendations(client, catalogue, alice, fake_redis):
     first = recommend(client, alice)
     disliked = rec_ids(first)[0]
@@ -123,8 +125,11 @@ def test_thumbs_up_does_not_suppress(client, catalogue, alice, fake_redis):
 
 # ── /feedback: bandit ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("signal, outcome", [(1, "wins"), (-1, "losses")])
-def test_feedback_credits_the_model_that_served_the_item(client, catalogue, alice, fake_redis, signal, outcome):
+def test_feedback_credits_the_model_that_served_the_item(
+    client, catalogue, alice, fake_redis, signal, outcome
+):
     body = recommend(client, alice)
     variant = body["model_variant"]
 
@@ -151,7 +156,12 @@ def test_client_cannot_choose_the_credited_model(client, catalogue, alice, fake_
 
     client.post(
         "/feedback",
-        json={"profile_id": alice["profile_id"], "movie_id": rec_ids(body)[0], "signal": 1, "model_variant": claimed},
+        json={
+            "profile_id": alice["profile_id"],
+            "movie_id": rec_ids(body)[0],
+            "signal": 1,
+            "model_variant": claimed,
+        },
         headers=alice["headers"],
     )
 
@@ -166,6 +176,7 @@ def test_feedback_on_items_never_served_does_not_touch_the_bandit(client, catalo
 
 # ── /feedback: validation and degraded mode ──────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -177,7 +188,9 @@ def test_feedback_on_items_never_served_does_not_touch_the_bandit(client, catalo
     ],
 )
 def test_invalid_feedback_is_rejected(client, alice, payload):
-    response = client.post("/feedback", json={"profile_id": alice["profile_id"], **payload}, headers=alice["headers"])
+    response = client.post(
+        "/feedback", json={"profile_id": alice["profile_id"], **payload}, headers=alice["headers"]
+    )
     assert response.status_code == 422
 
 

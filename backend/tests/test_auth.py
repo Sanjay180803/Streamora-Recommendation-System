@@ -23,6 +23,7 @@ def token_for(email, *, secret=None, expires_in=timedelta(minutes=5)):
 
 # ── Registration ──────────────────────────────────────────────────────────────
 
+
 def test_register_returns_token_and_hashes_password(client):
     response = client.post(
         "/auth/register",
@@ -68,6 +69,7 @@ def test_duplicate_email_is_rejected(client, register):
 
 # ── Login ─────────────────────────────────────────────────────────────────────
 
+
 def test_login_returns_token_and_profiles(client, alice):
     response = client.post("/auth/login", json={"email": "alice@example.com", "password": PASSWORD})
 
@@ -80,8 +82,12 @@ def test_login_returns_token_and_profiles(client, alice):
 def test_wrong_password_and_unknown_email_get_identical_responses(client, register):
     register("alice@example.com")
 
-    wrong_password = client.post("/auth/login", json={"email": "alice@example.com", "password": "wrong-password"})
-    unknown_email = client.post("/auth/login", json={"email": "nobody@example.com", "password": "wrong-password"})
+    wrong_password = client.post(
+        "/auth/login", json={"email": "alice@example.com", "password": "wrong-password"}
+    )
+    unknown_email = client.post(
+        "/auth/login", json={"email": "nobody@example.com", "password": "wrong-password"}
+    )
 
     assert wrong_password.status_code == unknown_email.status_code == 401
     assert wrong_password.json() == unknown_email.json()
@@ -105,6 +111,7 @@ def test_account_lookup_endpoint_is_gone(client, register):
 
 # ── Tokens ────────────────────────────────────────────────────────────────────
 
+
 def test_me_returns_identity_from_token(client, alice):
     response = client.get("/auth/me", headers=alice["headers"])
     assert response.json() == {"email": "alice@example.com", "name": "Alice"}
@@ -116,7 +123,9 @@ def test_me_returns_identity_from_token(client, alice):
         {},
         {"Authorization": "Bearer not-a-jwt"},
         {"Authorization": "Basic YWxpY2U6cGFzcw=="},
-        {"Authorization": f"Bearer {token_for('alice@example.com', secret='another-secret-that-is-long-enough-1')}"},
+        {
+            "Authorization": f"Bearer {token_for('alice@example.com', secret='another-secret-that-is-long-enough-1')}"
+        },
         {"Authorization": f"Bearer {token_for('alice@example.com', expires_in=timedelta(seconds=-1))}"},
         {"Authorization": f"Bearer {token_for('ghost@example.com')}"},
     ],
@@ -164,6 +173,7 @@ def test_public_routes_stay_public(client):
 
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+
 
 def test_cors_allows_configured_origin_only(client):
     allowed = client.options(

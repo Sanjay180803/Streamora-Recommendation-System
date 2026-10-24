@@ -6,10 +6,12 @@ from pydantic import BaseModel, Field
 # REQUEST MODELS  (what the frontend sends to FastAPI)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class WatchItem(BaseModel):
     """One item in the user's watch history."""
+
     title: str
-    genres: list[str] = Field(default_factory=list)   # e.g. ["Action", "Drama"]
+    genres: list[str] = Field(default_factory=list)  # e.g. ["Action", "Drama"]
     release_year: int | None = None
 
 
@@ -22,6 +24,7 @@ class RecommendRequest(BaseModel):
                    used for A/B routing and caching
     top_k:         how many recommendations to return (default 10)
     """
+
     watch_history: list[WatchItem] = Field(..., min_length=1, max_length=100)
     profile_id: str
     top_k: int = Field(default=10, ge=1, le=50)
@@ -37,6 +40,7 @@ class FeedbackRequest(BaseModel):
     The model that served the item is looked up server-side; any model_variant
     sent by an older client is ignored.
     """
+
     profile_id: str
     movie_id: str = Field(min_length=1, max_length=100)
     signal: Literal[-1, 1]
@@ -46,16 +50,18 @@ class FeedbackRequest(BaseModel):
 # RESPONSE MODELS  (what FastAPI sends back to the frontend)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class MovieCard(BaseModel):
     """
     One recommended movie — everything the frontend needs to render a card.
     """
+
     item_id: str
     item_idx: int
     title: str
     release_year: int | None
-    genres: list[str]            # e.g. ["Action", "Drama"]
-    log_popularity: float        # used by frontend to show a popularity indicator if needed
+    genres: list[str]  # e.g. ["Action", "Drama"]
+    log_popularity: float  # used by frontend to show a popularity indicator if needed
 
 
 class RecommendResponse(BaseModel):
@@ -68,6 +74,7 @@ class RecommendResponse(BaseModel):
     matched_items:   history titles found in the catalogue (fed to the model)
     unmatched_items: history titles not in the catalogue (ignored)
     """
+
     recommendations: list[MovieCard]
     model_variant: str
     cache_hit: bool
@@ -80,6 +87,7 @@ class FeedbackResponse(BaseModel):
     """
     Returned by POST /feedback.  Simple acknowledgement.
     """
+
     status: str = "ok"
 
 
@@ -87,6 +95,7 @@ class HealthResponse(BaseModel):
     """
     Returned by GET /health.  Used by Docker healthcheck and monitoring.
     """
+
     status: str
     model_loaded: bool
     redis_connected: bool

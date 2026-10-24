@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 # MODULE-LEVEL STATE  (populated once at startup, read-only afterwards)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_ort_session: ort.InferenceSession | None = None          # BERT4Rec
-_ort_session_sasrec: ort.InferenceSession | None = None   # SASRec
+_ort_session: ort.InferenceSession | None = None  # BERT4Rec
+_ort_session_sasrec: ort.InferenceSession | None = None  # SASRec
 
 # item_feature_matrix removed — item embeddings are baked into the ONNX model weights,
 # NOT passed as a runtime input (confirmed: model has no item_features input)
@@ -54,17 +54,17 @@ _user_feature_matrix: np.ndarray | None = None
 _user_id_to_idx: dict[str, int] = {}
 
 MODEL_VARIANTS = ("bert4rec", "sasrec")
-POPULARITY_VARIANT = "popularity"   # reported for cold-start responses (no model ran)
+POPULARITY_VARIANT = "popularity"  # reported for cold-start responses (no model ran)
 
-MAX_SEQ_LEN: int = 50   # fixed input length of both exported ONNX models
-PAD_TOKEN:   int = 0
-MASK_TOKEN:  int = 1
+MAX_SEQ_LEN: int = 50  # fixed input length of both exported ONNX models
+PAD_TOKEN: int = 0
+MASK_TOKEN: int = 1
 
 # Token offsets differ between models:
 #   BERT4Rec: PAD=0, MASK=1, items start at token=2  → offset = 2
 #   SASRec:   PAD=0,         items start at token=1  → offset = 1
 TOKEN_OFFSET_BERT4REC: int = 2
-TOKEN_OFFSET_SASREC:   int = 1
+TOKEN_OFFSET_SASREC: int = 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -124,11 +124,7 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
     # idx → MovieCard for fast response building
     genre_cols = [c for c in itf.columns if c.startswith("genre_")]
     for _, row in itf.iterrows():
-        genres = [
-            col.replace("genre_", "").replace("_", " ").title()
-            for col in genre_cols
-            if row[col] == 1
-        ]
+        genres = [col.replace("genre_", "").replace("_", " ").title() for col in genre_cols if row[col] == 1]
         release_year = int(row["release_year"]) if pd.notna(row["release_year"]) else None
         _idx_to_card[int(row["item_idx"])] = MovieCard(
             item_id=row["item_id"],
@@ -140,10 +136,7 @@ def load_data(data_dir: str, model_path: str, sasrec_model_path: str | None = No
         )
 
     # Popularity fallback — sorted by log_popularity descending
-    _popularity_fallback_ids = (
-        itf.sort_values("log_popularity", ascending=False)["item_id"]
-        .tolist()
-    )
+    _popularity_fallback_ids = itf.sort_values("log_popularity", ascending=False)["item_id"].tolist()
 
     # ── Build semantic search index ───────────────────────────────────────────
     try:
@@ -199,10 +192,11 @@ def item_count() -> int:
 # A/B ROUTING
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def get_model_variant(session_id: str, redis_client=None) -> str:
     """
     Route traffic between BERT4Rec and SASRec using Thompson sampling bandit.
-    
+
     Thompson sampling: sample from Beta(wins+1, losses+1) for each variant.
     The variant with the higher sample gets the request.
     Falls back to MD5 hash if Redis unavailable or no feedback yet.
@@ -210,10 +204,10 @@ def get_model_variant(session_id: str, redis_client=None) -> str:
     # Try Thompson sampling if Redis available
     if redis_client:
         try:
-            b4_wins   = int(redis_client.get("bandit:bert4rec:wins")   or 0)
+            b4_wins = int(redis_client.get("bandit:bert4rec:wins") or 0)
             b4_losses = int(redis_client.get("bandit:bert4rec:losses") or 0)
-            sr_wins   = int(redis_client.get("bandit:sasrec:wins")     or 0)
-            sr_losses = int(redis_client.get("bandit:sasrec:losses")   or 0)
+            sr_wins = int(redis_client.get("bandit:sasrec:wins") or 0)
+            sr_losses = int(redis_client.get("bandit:sasrec:losses") or 0)
 
             total_feedback = b4_wins + b4_losses + sr_wins + sr_losses
             if total_feedback >= 10:  # enough data for bandit
@@ -233,6 +227,7 @@ def get_model_variant(session_id: str, redis_client=None) -> str:
     digest = hashlib.md5(session_id.encode()).hexdigest()
     return "bert4rec" if int(digest, 16) % 2 == 0 else "sasrec"
 
+
 def build_sequence(watch_history: list, model_variant: str = "bert4rec") -> tuple[list[int], int]:
     """
     Convert watch history into model tokens.
@@ -245,14 +240,12 @@ def build_sequence(watch_history: list, model_variant: str = "bert4rec") -> tupl
 
     Returns (tokens, unmatched_count); tokens are truncated to MAX_SEQ_LEN.
     """
-    token_offset = (
-        TOKEN_OFFSET_SASREC if model_variant == "sasrec" else TOKEN_OFFSET_BERT4REC
-    )
+    token_offset = TOKEN_OFFSET_SASREC if model_variant == "sasrec" else TOKEN_OFFSET_BERT4REC
     tokens: list[int] = []
     unmatched = 0
 
     for item in watch_history:
-        title = item.title if hasattr(item, 'title') else item
+        title = item.title if hasattr(item, "title") else item
         item_id = _title_to_item_id.get(title.lower().strip())
         item_idx = _item_id_to_idx.get(item_id) if item_id is not None else None
         if item_idx is None:
@@ -268,13 +261,14 @@ def build_sequence(watch_history: list, model_variant: str = "bert4rec") -> tupl
 # INFERENCE
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class RecommendationResult:
     cards: list[MovieCard]
-    model_variant: str      # "bert4rec", "sasrec" or "popularity"
+    model_variant: str  # "bert4rec", "sasrec" or "popularity"
     cold_start: bool
-    matched_items: int      # history titles found in the catalogue
-    unmatched_items: int    # history titles not in the catalogue (ignored)
+    matched_items: int  # history titles found in the catalogue
+    unmatched_items: int  # history titles not in the catalogue (ignored)
 
 
 def get_recommendations(
@@ -299,7 +293,9 @@ def get_recommendations(
         model_variant = "bert4rec"
     sequence, unmatched = build_sequence(watch_history, model_variant)
     token_offset = TOKEN_OFFSET_SASREC if model_variant == "sasrec" else TOKEN_OFFSET_BERT4REC
-    watched_ids = {_idx_to_card[t - token_offset].item_id for t in sequence if (t - token_offset) in _idx_to_card}
+    watched_ids = {
+        _idx_to_card[t - token_offset].item_id for t in sequence if (t - token_offset) in _idx_to_card
+    }
     excluded = set(exclude_item_ids) | watched_ids
 
     # Cold-start gate: too few catalogue matches → popularity fallback
@@ -358,18 +354,18 @@ def _run_inference(
 
     # ── 1. Left-pad sequence to MAX_SEQ_LEN ──────────────────────────────────
     padded = [PAD_TOKEN] * (MAX_SEQ_LEN - len(sequence)) + list(sequence)
-    input_ids = np.array([padded], dtype=np.int64)          # shape: [1, 50]
+    input_ids = np.array([padded], dtype=np.int64)  # shape: [1, 50]
 
     # ── 2. Build attention mask ───────────────────────────────────────────────
-    pad_mask = (input_ids != PAD_TOKEN)                     # shape: [1, 50], dtype bool
+    pad_mask = input_ids != PAD_TOKEN  # shape: [1, 50], dtype bool
 
     # ── 3. User feature vector ────────────────────────────────────────────────
     user_feats = np.zeros((1, _user_feature_matrix.shape[1]), dtype=np.float32)
 
     # ── 4. Run inference ──────────────────────────────────────────────────────
     feed = {
-        "input_ids":  input_ids,
-        "pad_mask":   pad_mask,
+        "input_ids": input_ids,
+        "pad_mask": pad_mask,
         "user_feats": user_feats,
     }
     outputs = session.run(None, feed)
@@ -377,7 +373,7 @@ def _run_inference(
     # Output shape: [1, 50, vocab_size] — take logits at last real position
     raw = outputs[0]
     if raw.ndim == 3:
-        logits = raw[0, -1, :]        # last position in sequence
+        logits = raw[0, -1, :]  # last position in sequence
     elif raw.ndim == 2:
         logits = raw[0]
     else:
@@ -385,10 +381,10 @@ def _run_inference(
 
     # ── 5. Suppress invalid tokens ───────────────────────────────────────────
     logits = logits.copy().astype(np.float32)
-    logits[PAD_TOKEN] = -1e9          # never recommend PAD
+    logits[PAD_TOKEN] = -1e9  # never recommend PAD
     if model_variant != "sasrec":
-        logits[MASK_TOKEN] = -1e9     # BERT4Rec has a MASK token; SASRec does not
-    for token in sequence:            # never recommend something already watched
+        logits[MASK_TOKEN] = -1e9  # BERT4Rec has a MASK token; SASRec does not
+    for token in sequence:  # never recommend something already watched
         if 0 <= token < len(logits):
             logits[token] = -1e9
     for item_id in exclude_item_ids:  # or something the user rejected
@@ -397,11 +393,11 @@ def _run_inference(
             logits[item_idx + token_offset] = -1e9
 
     # ── 6. Decode top-K ──────────────────────────────────────────────────────
-    top_tokens = np.argsort(logits)[::-1][:top_k * 3]
+    top_tokens = np.argsort(logits)[::-1][: top_k * 3]
 
     cards: list[MovieCard] = []
     for token in top_tokens:
-        item_idx = int(token) - token_offset   # undo per-model token offset
+        item_idx = int(token) - token_offset  # undo per-model token offset
         if item_idx < 0:
             continue
         card = _idx_to_card.get(item_idx)
@@ -438,16 +434,14 @@ def _popularity_fallback(top_k: int, exclude_item_ids: set[str] = frozenset()) -
 # CACHE KEY
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def make_cache_key(session_id: str, watch_history: list, top_k: int) -> str:
     """
     Build a Redis cache key from the session and request.
     """
     # Order matters: the models are sequential, so the same titles in a
     # different order can produce different recommendations.
-    titles = [
-        (item.title if hasattr(item, 'title') else item).lower().strip()
-        for item in watch_history
-    ]
+    titles = [(item.title if hasattr(item, "title") else item).lower().strip() for item in watch_history]
     payload = json.dumps({"h": titles, "k": top_k}, sort_keys=True)
     digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
     return f"rec:{session_id}:{digest}"
@@ -457,6 +451,7 @@ def make_cache_key(session_id: str, watch_history: list, top_k: int) -> str:
 # FEATURE MATRIX BUILDERS  (mirror the notebook's build_*_feature_matrix fns)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _build_user_feature_matrix(df: pd.DataFrame) -> np.ndarray:
     """
     Build the standardized user feature matrix.
@@ -464,13 +459,14 @@ def _build_user_feature_matrix(df: pd.DataFrame) -> np.ndarray:
     Must exactly mirror the notebook's build_user_feature_matrix() function.
     """
     ignore = {
-        "user_idx", "user_id", "first_seen", "last_seen",
-        "user_engagement_tier", "user_preferred_hour_bucket",
+        "user_idx",
+        "user_id",
+        "first_seen",
+        "last_seen",
+        "user_engagement_tier",
+        "user_preferred_hour_bucket",
     }
-    num_cols = [
-        c for c in df.columns
-        if c not in ignore and pd.api.types.is_numeric_dtype(df[c])
-    ]
+    num_cols = [c for c in df.columns if c not in ignore and pd.api.types.is_numeric_dtype(df[c])]
 
     # Drop near-zero columns (>95% zeros) — same filter as notebook
     feature_df = df[num_cols].fillna(0)
@@ -479,12 +475,8 @@ def _build_user_feature_matrix(df: pd.DataFrame) -> np.ndarray:
     feature_df = feature_df[keep_cols]
 
     # One-hot encode ordinal categoricals (same as notebook)
-    tier_dummies = pd.get_dummies(
-        df["user_engagement_tier"].astype(str), prefix="tier"
-    )
-    hour_dummies = pd.get_dummies(
-        df["user_preferred_hour_bucket"].astype(str), prefix="hour"
-    )
+    tier_dummies = pd.get_dummies(df["user_engagement_tier"].astype(str), prefix="tier")
+    hour_dummies = pd.get_dummies(df["user_preferred_hour_bucket"].astype(str), prefix="hour")
     full_df = pd.concat([feature_df, tier_dummies, hour_dummies], axis=1).fillna(0)
 
     scaler = StandardScaler()

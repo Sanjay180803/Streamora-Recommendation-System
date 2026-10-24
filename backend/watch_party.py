@@ -118,12 +118,16 @@ def send_invite(
     recipient = db.query(User).filter(User.email == to_email).first()
 
     if recipient is not None:
-        existing = db.query(WatchInvite).filter(
-            WatchInvite.from_email == user.email,
-            WatchInvite.to_email == to_email,
-            WatchInvite.movie_id == req.movie_id,
-            WatchInvite.status == "pending",
-        ).first()
+        existing = (
+            db.query(WatchInvite)
+            .filter(
+                WatchInvite.from_email == user.email,
+                WatchInvite.to_email == to_email,
+                WatchInvite.movie_id == req.movie_id,
+                WatchInvite.status == "pending",
+            )
+            .first()
+        )
         if existing:
             return {"status": "ok", "room_id": existing.room_id}
 
@@ -139,15 +143,17 @@ def send_invite(
     db.add(room)
     db.flush()  # the invite references the room, so insert the room first
     if recipient is not None:
-        db.add(WatchInvite(
-            id=str(uuid.uuid4()),
-            from_email=user.email,
-            from_name=user.name,
-            to_email=to_email,
-            movie_title=req.movie_title,
-            movie_id=req.movie_id,
-            room_id=room.room_id,
-        ))
+        db.add(
+            WatchInvite(
+                id=str(uuid.uuid4()),
+                from_email=user.email,
+                from_name=user.name,
+                to_email=to_email,
+                movie_title=req.movie_title,
+                movie_id=req.movie_id,
+                room_id=room.room_id,
+            )
+        )
     db.commit()
     return {"status": "ok", "room_id": room.room_id}
 
@@ -157,14 +163,26 @@ def get_pending_invites(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    invites = db.query(WatchInvite).filter(
-        WatchInvite.to_email == user.email,
-        WatchInvite.status == "pending",
-    ).all()
-    return {"invites": [{
-        "id": i.id, "from_name": i.from_name, "from_email": i.from_email,
-        "movie_title": i.movie_title, "movie_id": i.movie_id,
-    } for i in invites]}
+    invites = (
+        db.query(WatchInvite)
+        .filter(
+            WatchInvite.to_email == user.email,
+            WatchInvite.status == "pending",
+        )
+        .all()
+    )
+    return {
+        "invites": [
+            {
+                "id": i.id,
+                "from_name": i.from_name,
+                "from_email": i.from_email,
+                "movie_title": i.movie_title,
+                "movie_id": i.movie_id,
+            }
+            for i in invites
+        ]
+    }
 
 
 @router.post("/invite/respond")
@@ -173,10 +191,14 @@ def respond_invite(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    invite = db.query(WatchInvite).filter(
-        WatchInvite.id == req.invite_id,
-        WatchInvite.to_email == user.email,
-    ).first()
+    invite = (
+        db.query(WatchInvite)
+        .filter(
+            WatchInvite.id == req.invite_id,
+            WatchInvite.to_email == user.email,
+        )
+        .first()
+    )
     if invite is None:
         raise HTTPException(status_code=404, detail="Invite not found")
     if invite.status != "pending":
@@ -186,9 +208,9 @@ def respond_invite(
     db.commit()
     accepted = req.action == "accepted"
     return {
-        "status":      "ok",
-        "room_id":     invite.room_id     if accepted else None,
-        "movie_id":    invite.movie_id    if accepted else None,
+        "status": "ok",
+        "room_id": invite.room_id if accepted else None,
+        "movie_id": invite.movie_id if accepted else None,
         "movie_title": invite.movie_title if accepted else None,
     }
 
@@ -201,8 +223,10 @@ def get_room(
 ):
     room = get_participant_room(room_id, user, db)
     return {
-        "room_id": room.room_id, "movie_id": room.movie_id,
-        "movie_title": room.movie_title, "created_by": room.created_by,
+        "room_id": room.room_id,
+        "movie_id": room.movie_id,
+        "movie_title": room.movie_title,
+        "created_by": room.created_by,
         "participants": manager.room_size(room_id),
     }
 
@@ -262,10 +286,15 @@ async def websocket_room(room_id: str, ws: WebSocket):
     name = user.name
     manager.add(room_id, ws, name)
     try:
-        await manager.broadcast_all(room_id, {
-            "type": "system", "text": f"{name} joined the room",
-            "participants": manager.room_size(room_id), "timestamp": _now(),
-        })
+        await manager.broadcast_all(
+            room_id,
+            {
+                "type": "system",
+                "text": f"{name} joined the room",
+                "participants": manager.room_size(room_id),
+                "timestamp": _now(),
+            },
+        )
         while True:
             text = _parse_chat(await ws.receive_text())
             if text is None:
@@ -273,14 +302,25 @@ async def websocket_room(room_id: str, ws: WebSocket):
                 continue
             # Build the outgoing message server-side; clients cannot set the
             # sender, type or any other field.
-            await manager.broadcast_all(room_id, {
-                "type": "chat", "text": text, "sender": name, "timestamp": _now(),
-            })
+            await manager.broadcast_all(
+                room_id,
+                {
+                    "type": "chat",
+                    "text": text,
+                    "sender": name,
+                    "timestamp": _now(),
+                },
+            )
     except WebSocketDisconnect:
         pass
     finally:
         manager.disconnect(room_id, ws)
-        await manager.broadcast_all(room_id, {
-            "type": "system", "text": f"{name} left the room",
-            "participants": manager.room_size(room_id), "timestamp": _now(),
-        })
+        await manager.broadcast_all(
+            room_id,
+            {
+                "type": "system",
+                "text": f"{name} left the room",
+                "participants": manager.room_size(room_id),
+                "timestamp": _now(),
+            },
+        )

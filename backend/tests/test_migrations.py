@@ -117,11 +117,14 @@ def test_init_db_is_idempotent(fresh_engine):
 def test_legacy_database_is_stamped_and_cleaned(legacy_engine):
     init_db(legacy_engine)
 
-    assert rows(legacy_engine, "SELECT version_num FROM alembic_version") == [("0002_relational_constraints",)]
+    assert rows(legacy_engine, "SELECT version_num FROM alembic_version") == [
+        ("0002_relational_constraints",)
+    ]
     assert rows(legacy_engine, "SELECT id FROM profiles ORDER BY id") == [("p-alice",), ("p-bob",)]
     # newest history row per profile survives
     assert rows(legacy_engine, "SELECT id, history FROM watch_history ORDER BY id") == [
-        ("h2", '["new"]'), ("h3", '["bob"]'),
+        ("h2", '["new"]'),
+        ("h3", '["bob"]'),
     ]
     assert rows(legacy_engine, "SELECT id FROM continue_watching") == []
     assert rows(legacy_engine, "SELECT id FROM watch_again") == [("w2",)]
@@ -134,14 +137,14 @@ def test_constraints_are_enforced_after_migration(legacy_engine):
 
     with pytest.raises(Exception, match="UNIQUE"):
         with legacy_engine.begin() as connection:
-            connection.execute(text(
-                "INSERT INTO watch_history VALUES ('h9', 'alice@example.com', 'p-alice', '[]', NULL)"
-            ))
+            connection.execute(
+                text("INSERT INTO watch_history VALUES ('h9', 'alice@example.com', 'p-alice', '[]', NULL)")
+            )
     with pytest.raises(Exception, match="FOREIGN KEY"):
         with legacy_engine.begin() as connection:
-            connection.execute(text(
-                "INSERT INTO profiles VALUES ('p9', 'nobody@example.com', 'X', NULL, NULL, NULL)"
-            ))
+            connection.execute(
+                text("INSERT INTO profiles VALUES ('p9', 'nobody@example.com', 'X', NULL, NULL, NULL)")
+            )
 
 
 def test_deleting_an_account_cascades(legacy_engine):
