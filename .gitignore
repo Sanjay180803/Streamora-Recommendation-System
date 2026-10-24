@@ -66,3 +66,5 @@ quantize_models.py
 .coverage
 htmlcov/
 .ruff_cache/
+.env.local
+.env.*.local

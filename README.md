@@ -173,6 +173,8 @@ secrets.
 
 ## Security notes
 
+Reporting and session policy: [SECURITY.md](SECURITY.md).
+
 - Passwords are hashed with argon2; access tokens are HS256 JWTs that expire
   after `JWT_EXPIRE_MINUTES` (default 60). The frontend keeps the token in
   `localStorage`.

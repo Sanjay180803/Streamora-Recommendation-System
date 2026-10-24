@@ -54,8 +54,13 @@ def test_record_then_verify_checksums(manifest, tmp_path):
     model.write_bytes(b"weights")
 
     assert run(manifest, tmp_path, "--record") == 0
-    assert json.loads(manifest.read_text())["files"][0]["sha256"] is not None
+    recorded = json.loads(manifest.read_text())["files"][0]
+    assert recorded["sha256"] is not None
+    assert recorded["size_bytes"] == len(b"weights")
     assert run(manifest, tmp_path) == 0
 
-    model.write_bytes(b"tampered")
+    model.write_bytes(b"tampere")  # same size, different content
+    assert run(manifest, tmp_path) == 1
+
+    model.write_bytes(b"truncated-and-longer")
     assert run(manifest, tmp_path) == 1

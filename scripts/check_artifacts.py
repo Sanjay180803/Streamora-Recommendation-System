@@ -1,7 +1,7 @@
 """Check that the model and data artifacts listed in configs/artifacts.json exist.
 
     python scripts/check_artifacts.py            # verify presence and recorded checksums
-    python scripts/check_artifacts.py --record   # store checksums of the present files
+    python scripts/check_artifacts.py --record   # store checksums and sizes of the present files
 
 Exit status is 1 if a required file is missing or any checksum does not match.
 """
@@ -35,13 +35,15 @@ def check(manifest: dict, root: Path, record: bool) -> list[str]:
                 print(f"optional file absent: {entry['path']}")
             continue
 
-        actual = sha256(path)
         if record:
-            entry["sha256"] = actual
+            entry["size_bytes"] = path.stat().st_size
+            entry["sha256"] = sha256(path)
             print(f"recorded {entry['path']}")
-        elif entry["sha256"] is None:
+        elif entry.get("sha256") is None:
             print(f"present (no checksum recorded): {entry['path']}")
-        elif entry["sha256"] != actual:
+        elif entry.get("size_bytes") not in (None, path.stat().st_size):
+            problems.append(f"size mismatch: {entry['path']}")
+        elif entry["sha256"] != sha256(path):
             problems.append(f"checksum mismatch: {entry['path']}")
         else:
             print(f"ok: {entry['path']}")
